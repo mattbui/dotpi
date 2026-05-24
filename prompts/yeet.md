@@ -23,13 +23,13 @@ Inspect only git state/diffs, not tests:
 
 Commit format:
 
-- One-line: Small/cohesive changes
+Small/cohesive changes:
 
 ```text
 type(scope): slightly more detailed subject
 ```
 
-- Multiline: Large, mixed, or multi-area changes
+Large, mixed, or multi-area changes:
 
 ```text
 type(scope): tighter subject
