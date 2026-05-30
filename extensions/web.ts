@@ -9,48 +9,45 @@ import {
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 
-const EXA_SEARCH_URL = "https://api.exa.ai/search";
+const TAVILY_SEARCH_URL = "https://api.tavily.com/search";
 const FIRECRAWL_SCRAPE_URL = "https://api.firecrawl.dev/v2/scrape";
 
 const DEFAULT_SEARCH_RESULTS = 5;
-const DEFAULT_MAX_TEXT_RESULTS = 3;
 const DEFAULT_MAX_CHARS_PER_RESULT = 4000;
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
+const DEFAULT_TAVILY_SEARCH_DEPTH = "basic";
 
 const WebSearchParams = Type.Object({
-  query: Type.String({ description: "Search query. Prefer narrow, source-seeking queries." }),
-  numResults: Type.Optional(Type.Number({ description: "Number of Exa results to return. Default: 5." })),
-  includeText: Type.Optional(Type.Boolean({ description: "Include capped page text excerpts. Default: true." })),
-  maxTextResults: Type.Optional(Type.Number({ description: "Maximum number of top results to show text for. Default: 3." })),
-  maxCharactersPerResult: Type.Optional(Type.Number({ description: "Maximum text excerpt characters per result. Default: 4000." })),
-  includeDomains: Type.Optional(Type.Array(Type.String(), { description: "Domains to include, e.g. ['docs.exa.ai']." })),
+  query: Type.String({ description: "Narrow web search query." }),
+  maxResults: Type.Optional(Type.Number({ description: "Maximum results to return. Default: 5." })),
+  topic: Type.Optional(Type.String({ description: "Result category: general, news, or finance." })),
+  timeRange: Type.Optional(Type.String({ description: "Recency filter: day, week, month, year, d, w, m, or y." })),
+  includeDomains: Type.Optional(Type.Array(Type.String(), { description: "Only include these domains." })),
   excludeDomains: Type.Optional(Type.Array(Type.String(), { description: "Domains to exclude." })),
-  startPublishedDate: Type.Optional(Type.String({ description: "Earliest publish date, ISO 8601 or YYYY-MM-DD." })),
-  endPublishedDate: Type.Optional(Type.String({ description: "Latest publish date, ISO 8601 or YYYY-MM-DD." })),
+  startDate: Type.Optional(Type.String({ description: "Earliest result date as YYYY-MM-DD." })),
+  endDate: Type.Optional(Type.String({ description: "Latest result date as YYYY-MM-DD." })),
 });
 
 const WebScrapeParams = Type.Object({
   url: Type.String({ description: "HTTP or HTTPS URL to scrape." }),
-  formats: Type.Optional(Type.Array(Type.String(), { description: "Firecrawl output formats. Default: ['markdown']." })),
-  onlyMainContent: Type.Optional(Type.Boolean({ description: "Return main page content only. Default: true." })),
-  timeout: Type.Optional(Type.Number({ description: "Provider timeout in milliseconds. Default: 30000." })),
-  waitFor: Type.Optional(Type.Number({ description: "Milliseconds to wait before scraping dynamic pages." })),
-  includeLinks: Type.Optional(Type.Boolean({ description: "Include links when Firecrawl returns them. Default: false." })),
+  formats: Type.Optional(Type.Array(Type.String(), { description: "Output formats. Default: ['markdown']." })),
+  onlyMainContent: Type.Optional(Type.Boolean({ description: "Return main content only. Default: true." })),
+  timeout: Type.Optional(Type.Number({ description: "Timeout in milliseconds. Default: 30000." })),
+  waitFor: Type.Optional(Type.Number({ description: "Milliseconds to wait before scraping." })),
+  includeLinks: Type.Optional(Type.Boolean({ description: "Include extracted links. Default: false." })),
 });
 
 type JsonRecord = Record<string, unknown>;
 
-type ExaResult = {
+type SearchResult = {
   title?: string;
   url?: string;
   publishedDate?: string;
-  author?: string;
   text?: string;
-  highlights?: string[];
 };
 
 type WebToolDetails = {
-  provider: "exa" | "firecrawl";
+  provider: "tavily" | "firecrawl";
   url?: string;
   query?: string;
   resultCount?: number;
@@ -102,6 +99,14 @@ function compactWhitespace(text: string): string {
 function truncateText(text: string, maxCharacters: number): string {
   if (text.length <= maxCharacters) return text;
   return `${text.slice(0, Math.max(0, maxCharacters - 1)).trimEnd()}…`;
+}
+
+function truncateSearchContent(text: string): { text: string; truncated: boolean } {
+  const clean = compactWhitespace(text);
+  return {
+    text: truncateText(clean, DEFAULT_MAX_CHARS_PER_RESULT),
+    truncated: clean.length > DEFAULT_MAX_CHARS_PER_RESULT,
+  };
 }
 
 function truncateLabel(text: string, maxCharacters = 96): string {
@@ -224,7 +229,7 @@ function extractProviderError(body: unknown): string | undefined {
   return asString(body.message) ?? asString(body.detail);
 }
 
-function formatSearchResults(results: ExaResult[], includeText: boolean, maxTextResults: number, maxCharactersPerResult: number): string {
+function formatSearchResults(results: SearchResult[]): string {
   if (results.length === 0) return "No search results found.";
 
   const sections = results.map((result, index) => {
@@ -233,17 +238,11 @@ function formatSearchResults(results: ExaResult[], includeText: boolean, maxText
     const lines = [`## ${index + 1}. ${title}`, `URL: ${url}`];
 
     if (result.publishedDate) lines.push(`Published: ${result.publishedDate}`);
-    if (result.author) lines.push(`Author: ${result.author}`);
 
-    if (result.highlights && result.highlights.length > 0) {
-      lines.push("", "Highlights:");
-      for (const highlight of result.highlights) {
-        lines.push(`- ${compactWhitespace(highlight)}`);
-      }
-    }
-
-    if (includeText && index < maxTextResults && result.text) {
-      lines.push("", "Text excerpt:", truncateText(compactWhitespace(result.text), maxCharactersPerResult));
+    if (result.text) {
+      const content = truncateSearchContent(result.text);
+      lines.push("", "Content:", content.text);
+      if (content.truncated) lines.push("[content truncated]");
     }
 
     return lines.join("\n");
@@ -252,7 +251,7 @@ function formatSearchResults(results: ExaResult[], includeText: boolean, maxText
   return sections.join("\n\n");
 }
 
-function normalizeExaResults(body: unknown): ExaResult[] {
+function normalizeTavilyResults(body: unknown): SearchResult[] {
   if (!isRecord(body) || !Array.isArray(body.results)) return [];
 
   return body.results
@@ -260,10 +259,8 @@ function normalizeExaResults(body: unknown): ExaResult[] {
     .map((result) => ({
       title: asString(result.title),
       url: asString(result.url),
-      publishedDate: asString(result.publishedDate),
-      author: asString(result.author),
-      text: asString(result.text),
-      highlights: asStringArray(result.highlights),
+      publishedDate: asString(result.published_date),
+      text: asString(result.raw_content) ?? asString(result.content),
     }));
 }
 
@@ -303,62 +300,49 @@ function formatScrapeResult(url: string, body: unknown, includeLinks: boolean): 
 const webSearchTool = defineTool({
   name: "web_search",
   label: "Web Search",
-  description:
-    "Search the live web with Exa. Cost-focused default returns 5 results, highlights for all results, and capped text excerpts for the top 3. Use before web_scrape when discovering sources.",
-  promptSnippet: "Search the live web with Exa; use before scraping when you need candidate URLs.",
+  description: "Search the live web. Use before web_scrape when discovering sources.",
+  promptSnippet: "Search the live web for candidate sources.",
   promptGuidelines: [
-    "Use web_search first for discovery and most docs/current-info lookups.",
+    "Use web_search first for discovery and current docs/info lookups.",
     "Prefer narrow queries and default result counts to reduce API calls.",
-    "Answer from web_search results when highlights and text excerpts are enough.",
   ],
   parameters: WebSearchParams,
   executionMode: "parallel",
 
   async execute(_toolCallId, params, signal) {
-    const apiKey = process.env.EXA_API_KEY;
+    const apiKey = process.env.TAVILY_API_KEY;
     if (!apiKey) {
-      return toolError("exa", "Missing EXA_API_KEY environment variable.", { query: params.query });
+      return toolError("tavily", "Missing TAVILY_API_KEY environment variable.", { query: params.query });
     }
 
-    const numResults = getPositiveInteger(params.numResults, DEFAULT_SEARCH_RESULTS, 1, 10);
-    const includeText = getBoolean(params.includeText, true);
-    const maxTextResults = getPositiveInteger(params.maxTextResults, DEFAULT_MAX_TEXT_RESULTS, 0, numResults);
-    const maxCharactersPerResult = getPositiveInteger(
-      params.maxCharactersPerResult,
-      DEFAULT_MAX_CHARS_PER_RESULT,
-      500,
-      20_000,
-    );
-    const shouldRequestText = includeText && maxTextResults > 0;
+    const maxResults = getPositiveInteger(params.maxResults, DEFAULT_SEARCH_RESULTS, 1, 20);
 
     const body: JsonRecord = {
       query: params.query,
-      type: "auto",
-      numResults,
-      contents: {
-        highlights: true,
-      },
+      search_depth: DEFAULT_TAVILY_SEARCH_DEPTH,
+      max_results: maxResults,
+      topic: asString(params.topic) ?? "general",
+      include_answer: false,
+      include_raw_content: false,
+      include_images: false,
+      include_favicon: false,
+      include_usage: true,
     };
-    if (shouldRequestText) {
-      body.contents = {
-        highlights: true,
-        text: { maxCharacters: maxCharactersPerResult },
-      };
-    }
 
-    if (params.includeDomains?.length) body.includeDomains = params.includeDomains;
-    if (params.excludeDomains?.length) body.excludeDomains = params.excludeDomains;
-    if (params.startPublishedDate) body.startPublishedDate = params.startPublishedDate;
-    if (params.endPublishedDate) body.endPublishedDate = params.endPublishedDate;
+    if (params.includeDomains?.length) body.include_domains = params.includeDomains;
+    if (params.excludeDomains?.length) body.exclude_domains = params.excludeDomains;
+    if (params.timeRange) body.time_range = params.timeRange;
+    if (params.startDate) body.start_date = params.startDate;
+    if (params.endDate) body.end_date = params.endDate;
 
     try {
       const json = await fetchJson(
-        EXA_SEARCH_URL,
+        TAVILY_SEARCH_URL,
         {
           method: "POST",
           headers: {
+            authorization: `Bearer ${apiKey}`,
             "content-type": "application/json",
-            "x-api-key": apiKey,
           },
           body: JSON.stringify(body),
         },
@@ -366,21 +350,21 @@ const webSearchTool = defineTool({
         signal,
       );
 
-      const results = normalizeExaResults(json);
-      const output = formatSearchResults(results, shouldRequestText, maxTextResults, maxCharactersPerResult);
+      const results = normalizeTavilyResults(json);
+      const output = formatSearchResults(results);
       const truncated = truncateToolOutput(output);
 
       return {
         content: [{ type: "text", text: truncated.text }],
         details: {
-          provider: "exa",
+          provider: "tavily",
           query: params.query,
           resultCount: results.length,
           truncated: truncated.truncated,
         } satisfies WebToolDetails,
       };
     } catch (error) {
-      return toolError("exa", error instanceof Error ? error.message : String(error), { query: params.query });
+      return toolError("tavily", error instanceof Error ? error.message : String(error), { query: params.query });
     }
   },
 
@@ -420,11 +404,10 @@ const webSearchTool = defineTool({
 const webScrapeTool = defineTool({
   name: "web_scrape",
   label: "Web Scrape",
-  description:
-    "Scrape one exact URL with Firecrawl and return clean markdown. Use only when web_search output is insufficient or exact page content is needed.",
-  promptSnippet: "Fetch clean markdown content for a specific URL using Firecrawl.",
+  description: "Scrape one exact URL and return clean page content.",
+  promptSnippet: "Fetch clean page content for a specific URL.",
   promptGuidelines: [
-    "Use web_scrape only for the single best URL when exact content, code blocks, tables, or fuller docs content are needed.",
+    "Use web_scrape when exact page content, code blocks, tables, or fuller docs content are needed.",
     "Cite source URLs from web_search and web_scrape results in final answers.",
   ],
   parameters: WebScrapeParams,
