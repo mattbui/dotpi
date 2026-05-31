@@ -1,3 +1,11 @@
+/**
+ * Inline `@` file and directory picker.
+ *
+ * Loads project paths with `fd` or `find`, fuzzy-filters them with `fzf`, and
+ * renders an editor-adjacent picker for inserting plain paths without the
+ * trigger marker. This replaces Pi's built-in file completion while an inline
+ * `@` token is active.
+ */
 import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { CustomEditor, ExtensionAPI } from "@earendil-works/pi-coding-agent";

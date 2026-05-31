@@ -1,3 +1,10 @@
+/**
+ * Reasoning level command.
+ *
+ * Adds `/reasoning` and `/thinking` aliases for changing Pi's current model
+ * thinking level. With no argument, it shows a small TUI picker; with an
+ * argument, it validates and applies the requested level directly.
+ */
 import { DynamicBorder, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Container, type SelectItem, SelectList, Text } from "@earendil-works/pi-tui";
 

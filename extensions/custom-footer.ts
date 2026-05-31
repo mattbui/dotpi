@@ -1,3 +1,11 @@
+/**
+ * Custom Pi footer.
+ *
+ * Replaces the default footer with a compact status view for the active workflow:
+ * current directory, git branch, permission/auto-review mode, session name,
+ * model and reasoning state, fast-mode status, token/cost totals, context
+ * usage, and any remaining extension statuses.
+ */
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth } from "@earendil-works/pi-tui";

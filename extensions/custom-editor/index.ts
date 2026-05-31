@@ -1,3 +1,11 @@
+/**
+ * Custom editor entrypoint.
+ *
+ * Replaces Pi's default input editor with the prompt UI and keyboard behavior
+ * used here: compact marker styling, hardware beam cursor support, inline
+ * file/line fuzzy pickers, Enter-to-accept autocomplete, slash-command submit,
+ * and Alt+Enter prompt submission.
+ */
 import { CustomEditor, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { matchesKey, truncateToWidth, visibleWidth, type AutocompleteProvider } from "@earendil-works/pi-tui";
 import {

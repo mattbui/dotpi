@@ -1,3 +1,10 @@
+/**
+ * OpenAI Codex fast mode.
+ *
+ * Adds `/fast [on|off]`, persists the preference in Pi's agent settings, shows
+ * footer status while enabled, and injects the OpenAI `service_tier: "priority"`
+ * field into Codex Responses payloads.
+ */
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";

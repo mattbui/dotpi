@@ -1,3 +1,11 @@
+/**
+ * Commit workflow command.
+ *
+ * `/commit` creates a marker in Pi's conversation tree, sends a focused commit prompt with
+ * parsed flags, and keeps a footer/widget reminder active until the context is
+ * cleared. `/commit clear` can optionally summarize the commit attempt before
+ * navigating back to the pre-commit conversation point.
+ */
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 

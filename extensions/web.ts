@@ -1,3 +1,11 @@
+/**
+ * Web search and scrape tools for Pi.
+ *
+ * The search tool uses Tavily for source discovery, while the scrape tool uses
+ * Firecrawl to fetch a specific page as clean text/markdown. Outputs are
+ * truncated through Pi's tool limits so live web context remains useful without
+ * flooding the session.
+ */
 import {
   DEFAULT_MAX_BYTES,
   DEFAULT_MAX_LINES,

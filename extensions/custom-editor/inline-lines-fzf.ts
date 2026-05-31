@@ -1,3 +1,11 @@
+/**
+ * Inline `@@` project line picker.
+ *
+ * Loads ripgrep line results once, fuzzy-filters them with `fzf`, and renders a
+ * picker that inserts `file:line` references into the prompt. It is optimized
+ * for quickly pointing the agent at exact code locations without leaving the
+ * editor.
+ */
 import type { CustomEditor, ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { extendedMatch, Fzf, type FzfResultItem } from "fzf";

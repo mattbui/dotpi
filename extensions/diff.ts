@@ -1,3 +1,10 @@
+/**
+ * Revdiff popup command.
+ *
+ * `/diff` opens a tmux revdiff popup, waits for captured review annotations,
+ * and loads those annotations back into the Pi editor together with enough git
+ * context for the agent to act on them.
+ */
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";

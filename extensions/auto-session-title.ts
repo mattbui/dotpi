@@ -1,3 +1,11 @@
+/**
+ * Auto generate session title and update tmux labels.
+ *
+ * This extension derives a useful session name from the first user message,
+ * asks a small Codex model for a cleaner title when possible, and mirrors the
+ * active title into tmux pane options so the surrounding terminal UI can show
+ * Pi session state.
+ */
 import { complete, type UserMessage } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 

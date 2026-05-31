@@ -1,3 +1,11 @@
+/**
+ * Terminal cursor helpers for the custom editor.
+ *
+ * Pi normally renders a software cursor in the text buffer. These helpers let
+ * the custom editor prefer a hardware beam cursor, preserve cursor markers
+ * while dropdowns are visible, hide the cursor on terminal focus loss, and
+ * restore the shell cursor on shutdown.
+ */
 import { CURSOR_MARKER } from "@earendil-works/pi-tui";
 
 const SOFTWARE_CURSOR_START = "\x1b[7m";
