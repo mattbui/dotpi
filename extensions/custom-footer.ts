@@ -14,6 +14,13 @@ function formatTokens(count: number): string {
   return `${Math.round(count / 1000000)}M`;
 }
 
+function formatPermissionMode(status: string | undefined, theme: { fg: (color: string, text: string) => string }): string {
+  const cleanStatus = status ? sanitizeStatusText(status) : "";
+  if (cleanStatus === "auto-review:sandbox") return theme.fg("thinkingMedium", cleanStatus);
+  if (cleanStatus === "auto-review") return theme.fg("thinkingHigh", cleanStatus);
+  return theme.fg("bashMode", "full access");
+}
+
 export default function (pi: ExtensionAPI) {
   pi.on("session_start", (_event, ctx) => {
     ctx.ui.setFooter((tui, theme, footerData) => {
@@ -47,10 +54,13 @@ export default function (pi: ExtensionAPI) {
           const separator = theme.fg("dim", " • ");
           const branch = footerData.getGitBranch();
           const sessionName = ctx.sessionManager.getSessionName();
+          const extensionStatuses = footerData.getExtensionStatuses();
+          const autoReviewStatus = extensionStatuses.get("auto-review");
           const pwdLineParts = [theme.fg("dim", pwd)];
           if (branch) {
-            pwdLineParts.push(theme.fg("dim", " ("), theme.fg("success", branch), theme.fg("dim", ")"));
+            pwdLineParts.push(separator, theme.fg("success", branch));
           }
+          pwdLineParts.push(separator, formatPermissionMode(autoReviewStatus, theme));
           if (sessionName) {
             pwdLineParts.push(separator, theme.fg("muted", sessionName));
           }
@@ -74,7 +84,6 @@ export default function (pi: ExtensionAPI) {
             modelParts.push(separator, thinkingText);
           }
 
-          const extensionStatuses = footerData.getExtensionStatuses();
           const fastStatus = extensionStatuses.get("fast-mode");
           if (fastStatus) {
             modelParts.push(separator, theme.fg("success", sanitizeStatusText(fastStatus)));
@@ -108,7 +117,7 @@ export default function (pi: ExtensionAPI) {
             "",
           ];
 
-          const otherExtensionStatuses = Array.from(extensionStatuses.entries()).filter(([key]) => key !== "fast-mode");
+          const otherExtensionStatuses = Array.from(extensionStatuses.entries()).filter(([key]) => key !== "fast-mode" && key !== "auto-review");
           if (otherExtensionStatuses.length > 0) {
             const statusLine = otherExtensionStatuses
               .sort(([a], [b]) => a.localeCompare(b))

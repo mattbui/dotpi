@@ -1,4 +1,5 @@
 {
+  "name": "pi-custom-editor",
   "private": true,
   "dependencies": {
     "fzf": "^0.5.2"
