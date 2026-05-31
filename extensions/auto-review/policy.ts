@@ -11,7 +11,7 @@ import { homedir } from "node:os";
 import { isAbsolute, normalize, resolve, sep } from "node:path";
 
 export type RiskLevel = "low" | "medium" | "high" | "critical";
-export type ReviewKind = "initial_bash" | "no_sandbox_retry" | "path_read" | "path_write" | "path_search";
+export type ReviewKind = "initial_bash" | "sandbox_fallback" | "path_read" | "path_write" | "path_search";
 
 export type ReviewAction = {
   kind: ReviewKind;
@@ -189,7 +189,7 @@ export function classifyFileOperationTool(event: FileOperationToolEvent, cwd: st
 
 export function buildSandboxFallbackAction(command: string, cwd: string, sandboxDenial: string): ReviewAction {
   return {
-    kind: "no_sandbox_retry",
+    kind: "sandbox_fallback",
     toolName: "bash",
     input: { command },
     cwd,

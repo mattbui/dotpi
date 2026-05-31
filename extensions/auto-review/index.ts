@@ -293,7 +293,7 @@ export default function (pi: ExtensionAPI) {
 
 function formatRetryUserPrompt(action: ReviewAction, review: ReviewDecision): string {
   return [
-    formatActionForUser(action, "Auto reviewer marked this no-sandbox retry high risk"),
+    formatActionForUser(action, "Auto reviewer marked this sandbox fallback high risk"),
     "",
     `Auto-review risk: ${review.risk}`,
     `Auto-review rationale: ${review.rationale}`,
