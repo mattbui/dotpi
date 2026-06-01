@@ -137,23 +137,23 @@ export default function (pi: ExtensionAPI) {
     ctx: ExtensionContext,
   ): Promise<{ allow: true } | { allow: false; reason: string }> {
     if (config.sandboxFallback === "off") {
-      return { allow: false, reason: "Sandbox fallback is disabled" };
+      return { allow: false, reason: "Retry without sandbox is disabled" };
     }
 
     if (config.sandboxFallback === "user") {
-      const ok = await askUser(ctx, "Run outside sandbox?", formatActionForUser(action, "Sandbox denied this command"));
-      return ok ? { allow: true } : { allow: false, reason: "Sandbox fallback blocked by user" };
+      const ok = await askUser(ctx, "Retry without sandbox?", formatActionForUser(action, "Sandbox denied this command"));
+      return ok ? { allow: true } : { allow: false, reason: "Retry without sandbox blocked by user" };
     }
 
-    const review = await withWorkingMessage(ctx, "Auto reviewing retry outside sandbox...", () => runAutoReview(action, ctx, config.reviewer, ctx.signal));
+    const review = await withWorkingMessage(ctx, "Auto reviewing retry without sandbox...", () => runAutoReview(action, ctx, config.reviewer, ctx.signal));
     if (reviewAllowed(review)) return { allow: true };
 
     if (reviewEscalatesToUser(review)) {
-      const ok = await askUser(ctx, "Run outside sandbox?", formatSandboxFallbackUserPrompt(action, review.rationale));
-      return ok ? { allow: true } : { allow: false, reason: "Sandbox fallback blocked by user" };
+      const ok = await askUser(ctx, "Retry without sandbox?", formatSandboxFallbackUserPrompt(action, review.rationale));
+      return ok ? { allow: true } : { allow: false, reason: "Retry without sandbox blocked by user" };
     }
 
-    return { allow: false, reason: `Sandbox fallback blocked by auto review: ${review.rationale}` };
+    return { allow: false, reason: `Retry without sandbox blocked by auto review: ${review.rationale}` };
   }
 
   pi.registerTool({
@@ -184,7 +184,7 @@ export default function (pi: ExtensionAPI) {
         const retryResolution = await reviewSandboxFallback(retryAction, ctx);
         if (!retryResolution.allow) throw new Error(retryResolution.reason);
 
-        if (ctx.hasUI) ctx.ui.notify("Sandbox blocked command; approved unsandboxed retry", "info");
+        if (ctx.hasUI) ctx.ui.notify("Sandbox blocked command; approved retry without sandbox", "info");
         return createBashToolDefinition(ctx.cwd).execute(toolCallId, params, signal, onUpdate, ctx);
       }
     },
@@ -293,7 +293,7 @@ export default function (pi: ExtensionAPI) {
 
 function formatSandboxFallbackUserPrompt(action: ReviewAction, rationale: string): string {
   return [
-    formatActionForUser(action, `Auto reviewer requested user approval for unsandboxed retry: ${rationale}`),
+    formatActionForUser(action, `Auto reviewer requested user approval for retry without sandbox: ${rationale}`),
     "",
     "This will run without the filesystem sandbox.",
   ].join("\n");

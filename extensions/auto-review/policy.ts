@@ -195,7 +195,7 @@ export function buildSandboxFallbackAction(command: string, cwd: string, sandbox
     cwd,
     command,
     operation: "execute",
-    reason: "Sandbox denied the command; review unsandboxed retry",
+    reason: "Sandbox denied the command; review retry without sandbox",
     sandboxDenial,
   };
 }

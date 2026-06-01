@@ -12,8 +12,8 @@ bash call
   -> auto reviewer if risky or unclear
   -> user approval if reviewer escalates
   -> sandboxed bash
-  -> fallback review if sandbox blocks the command or output looks sandbox-denied
-  -> unsandboxed retry if fallback review allows or user approves escalation
+  -> retry review if sandbox blocks the command or output looks sandbox-denied
+  -> retry without sandbox if retry review allows or user approves escalation
 ```
 
 File operation tools:
@@ -53,7 +53,7 @@ auto-review:sandbox
 - The reviewer can allow, deny, or escalate to the user for explicit approval.
 - Sensitive user paths ask for user approval.
 - Secret material, credential probing, destructive commands, and privilege escalation are denied before reviewer or sandbox.
-- Sandbox fallback is only for `bash` and only after a sandbox denial or likely sandbox-denied command output.
-- Retry outside the sandbox is auto reviewed; it runs only if the reviewer allows it or the user approves an escalation.
+- Retry without sandbox is only for `bash` and only after a sandbox denial or likely sandbox-denied command output.
+- Retry without sandbox is auto reviewed; it runs only if the reviewer allows it or the user approves an escalation.
 
 The reviewer uses the current active model with minimal reasoning and receives no tools. It only returns JSON: allow/deny/escalate_to_user, risk, and rationale.
