@@ -99,8 +99,16 @@ export function createSandboxedBashOps(): BashOperations {
         const onAbort = () => killChild();
         signal?.addEventListener("abort", onAbort, { once: true });
 
-        child.stdout?.on("data", onData);
-        child.stderr?.on("data", onData);
+        const stdoutChunks: Buffer[] = [];
+        const stderrChunks: Buffer[] = [];
+        child.stdout?.on("data", (data: Buffer) => {
+          stdoutChunks.push(Buffer.from(data));
+          onData(data);
+        });
+        child.stderr?.on("data", (data: Buffer) => {
+          stderrChunks.push(Buffer.from(data));
+          onData(data);
+        });
         child.on("error", (error) => {
           if (timeoutHandle) clearTimeout(timeoutHandle);
           signal?.removeEventListener("abort", onAbort);
@@ -115,12 +123,59 @@ export function createSandboxedBashOps(): BashOperations {
           } else if (timedOut) {
             reject(new Error(`timeout:${timeout}`));
           } else {
+            const exitCode = code ?? -1;
+            const stdout = Buffer.concat(stdoutChunks).toString("utf8");
+            const stderr = Buffer.concat(stderrChunks).toString("utf8");
+
+            // Detect likely sandbox errors from command output so fallback can run.
+            const annotatedStderr = SandboxManager.annotateStderrWithSandboxFailures(command, stderr);
+            if (isLikelySandboxDeniedOutput(exitCode, stdout, annotatedStderr)) {
+              reject(new Error(formatLikelySandboxDeniedOutput(exitCode, stdout, annotatedStderr)));
+              return;
+            }
             resolve({ exitCode: code });
           }
         });
       });
     },
   };
+}
+
+const SANDBOX_DENIAL_PATTERNS = [
+  /operation not permitted/i,
+  /permission denied/i,
+  /read-only file system/i,
+  /seccomp/i,
+  /sandbox/i,
+  /landlock/i,
+  /failed to write file/i,
+  /deny\(default\)/i,
+  /not allowed/i,
+  /network.*blocked/i,
+  /violat/i,
+];
+
+function isLikelySandboxDeniedOutput(exitCode: number, stdout: string, stderr: string): boolean {
+  if (exitCode === 0) return false;
+  if (stderr.includes("<sandbox_violations>")) return true;
+
+  const output = `${stdout}\n${stderr}`;
+  return SANDBOX_DENIAL_PATTERNS.some((pattern) => pattern.test(output));
+}
+
+function formatLikelySandboxDeniedOutput(exitCode: number, stdout: string, stderr: string): string {
+  const lines = [`Sandbox likely denied command (exit ${exitCode}).`];
+  const output = [stdout.trim() ? `stdout:\n${truncateSandboxOutput(stdout)}` : undefined, stderr.trim() ? `stderr:\n${truncateSandboxOutput(stderr)}` : undefined]
+    .filter(Boolean)
+    .join("\n\n");
+  if (output) lines.push("", output);
+  return lines.join("\n");
+}
+
+function truncateSandboxOutput(text: string): string {
+  const trimmed = text.trim();
+  if (trimmed.length <= 3000) return trimmed;
+  return `${trimmed.slice(0, 3000)}\n... <truncated>`;
 }
 
 export function isSandboxDeniedError(error: unknown): boolean {

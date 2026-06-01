@@ -32,7 +32,7 @@ export type PolicyDecision =
   | { kind: "deny"; reason: string };
 
 export type ReviewDecision = {
-  outcome: "allow" | "deny";
+  outcome: "allow" | "deny" | "escalate_to_user";
   risk: RiskLevel;
   rationale: string;
 };
@@ -200,12 +200,12 @@ export function buildSandboxFallbackAction(command: string, cwd: string, sandbox
   };
 }
 
-export function shouldAskUserForRetry(decision: ReviewDecision): boolean {
-  return decision.risk === "high" || decision.risk === "critical";
-}
-
 export function reviewAllowed(decision: ReviewDecision): boolean {
   return decision.outcome === "allow";
+}
+
+export function reviewEscalatesToUser(decision: ReviewDecision): boolean {
+  return decision.outcome === "escalate_to_user";
 }
 
 export function formatActionForUser(action: ReviewAction, reason: string): string {

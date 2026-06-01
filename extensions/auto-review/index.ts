@@ -5,7 +5,7 @@
  * - overrides Pi's built-in `bash` tool with policy review plus sandboxed execution
  * - intercepts file operation tools through `tool_call`
  * - routes ambiguous actions to the reviewer
- * - asks the user only for sensitive or high-risk escalation cases
+ * - asks the user for sensitive paths or reviewer-requested escalations
  * - exposes `/auto-review ...` commands and footer status text
  */
 import {
@@ -24,10 +24,9 @@ import {
   classifyFileOperationTool,
   formatActionForUser,
   reviewAllowed,
-  shouldAskUserForRetry,
+  reviewEscalatesToUser,
   type PolicyDecision,
   type ReviewAction,
-  type ReviewDecision,
 } from "./policy.ts";
 import { runAutoReview, type ReviewerConfig } from "./reviewer.ts";
 import {
@@ -126,6 +125,10 @@ export default function (pi: ExtensionAPI) {
 
     const review = await withWorkingMessage(ctx, autoReviewMessage(decision.action), () => runAutoReview(decision.action, ctx, config.reviewer, ctx.signal));
     if (reviewAllowed(review)) return { allow: true };
+    if (reviewEscalatesToUser(review)) {
+      const ok = await askUser(ctx, "Approve protected tool call?", formatActionForUser(decision.action, `Auto reviewer requested user approval: ${review.rationale}`));
+      return ok ? { allow: true } : { allow: false, reason: "Blocked by user" };
+    }
     return { allow: false, reason: `Blocked by auto review: ${review.rationale}` };
   }
 
@@ -142,18 +145,15 @@ export default function (pi: ExtensionAPI) {
       return ok ? { allow: true } : { allow: false, reason: "Sandbox fallback blocked by user" };
     }
 
-    const review = await withWorkingMessage(ctx, "Reviewing sandbox fallback...", () => runAutoReview(action, ctx, config.reviewer, ctx.signal));
-    if (!reviewAllowed(review)) {
-      return { allow: false, reason: `Sandbox fallback blocked by auto review: ${review.rationale}` };
+    const review = await withWorkingMessage(ctx, "Auto reviewing retry outside sandbox...", () => runAutoReview(action, ctx, config.reviewer, ctx.signal));
+    if (reviewAllowed(review)) return { allow: true };
+
+    if (reviewEscalatesToUser(review)) {
+      const ok = await askUser(ctx, "Run outside sandbox?", formatSandboxFallbackUserPrompt(action, review.rationale));
+      return ok ? { allow: true } : { allow: false, reason: "Sandbox fallback blocked by user" };
     }
 
-    if (shouldAskUserForRetry(review)) {
-      if (ctx.hasUI) ctx.ui.notify("Auto reviewer marked sandbox fallback high risk; asking for approval", "warning");
-      const ok = await askUser(ctx, "Run high-risk command outside sandbox?", formatRetryUserPrompt(action, review));
-      return ok ? { allow: true } : { allow: false, reason: "High-risk sandbox fallback blocked by user" };
-    }
-
-    return { allow: true };
+    return { allow: false, reason: `Sandbox fallback blocked by auto review: ${review.rationale}` };
   }
 
   pi.registerTool({
@@ -182,9 +182,9 @@ export default function (pi: ExtensionAPI) {
 
         const retryAction = buildSandboxFallbackAction(params.command, ctx.cwd, sandboxDenialText(error));
         const retryResolution = await reviewSandboxFallback(retryAction, ctx);
-        if (!retryResolution.allow) throw error;
+        if (!retryResolution.allow) throw new Error(retryResolution.reason);
 
-        if (ctx.hasUI) ctx.ui.notify("Sandbox blocked command; auto reviewer approved unsandboxed retry", "warning");
+        if (ctx.hasUI) ctx.ui.notify("Sandbox blocked command; approved unsandboxed retry", "info");
         return createBashToolDefinition(ctx.cwd).execute(toolCallId, params, signal, onUpdate, ctx);
       }
     },
@@ -291,12 +291,9 @@ export default function (pi: ExtensionAPI) {
   });
 }
 
-function formatRetryUserPrompt(action: ReviewAction, review: ReviewDecision): string {
+function formatSandboxFallbackUserPrompt(action: ReviewAction, rationale: string): string {
   return [
-    formatActionForUser(action, "Auto reviewer marked this sandbox fallback high risk"),
-    "",
-    `Auto-review risk: ${review.risk}`,
-    `Auto-review rationale: ${review.rationale}`,
+    formatActionForUser(action, `Auto reviewer requested user approval for unsandboxed retry: ${rationale}`),
     "",
     "This will run without the filesystem sandbox.",
   ].join("\n");
