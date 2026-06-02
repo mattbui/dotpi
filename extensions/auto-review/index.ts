@@ -55,8 +55,11 @@ const DEFAULT_CONFIG: AutoReviewConfig = {
   sandboxFallback: "auto-review",
   userApprovalTimeoutMs: 60_000,
   reviewer: {
-    reasoningEffort: "minimal",
-    maxTokens: 512,
+    modelProvider: "openai-codex",
+    modelId: "codex-auto-review",
+    reasoningEffort: "low",
+    // Codex Guardian does not set an explicit max output token cap.
+    // maxTokens: 512,
   },
   sandbox: DEFAULT_SANDBOX_CONFIG,
 };
@@ -292,6 +295,7 @@ export default function (pi: ExtensionAPI) {
 
       const lines = [
         `Auto review: ${config.enabled ? "enabled" : "disabled"}`,
+        `Reviewer: ${config.reviewer.modelProvider}/${config.reviewer.modelId}:${config.reviewer.reasoningEffort}`,
         `Sandbox: ${sandboxReady ? "on" : `off${sandboxStatusNote ? ` (${sandboxStatusNote})` : ""}`}`,
       ];
       ctx.ui.notify(lines.join("\n"), "info");

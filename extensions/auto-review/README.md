@@ -56,4 +56,4 @@ auto-review:sandbox
 - Retry without sandbox is only for `bash` and only after a sandbox denial or likely sandbox-denied command output.
 - Retry without sandbox is auto reviewed; it runs only if the reviewer allows it or the user approves an escalation.
 
-The reviewer uses the current active model with minimal reasoning and receives no tools. It only returns JSON: allow/deny/escalate_to_user, risk, and rationale.
+The reviewer uses `openai-codex/codex-auto-review` with low reasoning by default, receives no tools, and does not set an explicit max output token cap. It only returns JSON: allow/deny/escalate_to_user, risk, and rationale.
