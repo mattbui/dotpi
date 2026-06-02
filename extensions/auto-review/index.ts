@@ -101,6 +101,14 @@ export default function (pi: ExtensionAPI) {
 
   async function askUser(ctx: ExtensionContext, title: string, body: string): Promise<boolean> {
     if (!ctx.hasUI) return false;
+
+    pi.events.emit("notify:attention", {
+      kind: "confirm",
+      title,
+      timeoutMs: config.userApprovalTimeoutMs,
+      sessionName: pi.getSessionName() || ctx.sessionManager.getSessionName(),
+    });
+
     return ctx.ui.confirm(title, body, { timeout: config.userApprovalTimeoutMs });
   }
 

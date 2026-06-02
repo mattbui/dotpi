@@ -138,27 +138,61 @@ function buildNotificationBody(responseText?: string): string {
   return responseText ? truncateNotificationText(responseText) : "Agent done";
 }
 
+type AttentionRequest = {
+  title?: unknown;
+  timeoutMs?: unknown;
+  sessionName?: unknown;
+};
+
+async function notifyIfAway(pi: ExtensionAPI, title: string, body: string): Promise<void> {
+  const tmuxFocus = isTmuxPane()
+    ? await getCurrentTmuxFocusState(pi)
+    : { windowFocused: false, sessionAttached: false };
+  const terminalFocused = await isTerminalFocused(pi);
+
+  if (isTmuxPane()) {
+    // Skip macOS notification when this tmux window is focused in an attached session
+    // and the terminal app is focused (or app focus cannot be determined). Pane focus
+    // does not matter: another active pane in the same window should still suppress it.
+    if (tmuxFocus.windowFocused && tmuxFocus.sessionAttached && terminalFocused !== false) return;
+  } else if (terminalFocused !== false) {
+    return;
+  }
+
+  await sendMacosNotification(pi, title, body);
+}
+
+function getAttentionRequest(data: unknown): AttentionRequest | undefined {
+  return data && typeof data === "object" ? (data as AttentionRequest) : undefined;
+}
+
+function buildAttentionTitle(pi: ExtensionAPI, request: AttentionRequest | undefined): string {
+  const sessionName = typeof request?.sessionName === "string" ? request.sessionName : pi.getSessionName();
+  return sanitizeNotificationText(sessionName ? `${NOTIFICATION_TITLE_PREFIX}: ${sessionName}` : NOTIFICATION_TITLE_PREFIX);
+}
+
+function buildAttentionBody(request: AttentionRequest | undefined): string {
+  const title = typeof request?.title === "string" ? sanitizeNotificationText(request.title) : "user input";
+  const timeoutMs = typeof request?.timeoutMs === "number" && Number.isFinite(request.timeoutMs) ? request.timeoutMs : undefined;
+  const timeoutText = timeoutMs ? ` (${Math.ceil(timeoutMs / 1000)}s timeout)` : "";
+  return truncateNotificationText(`Waiting for approval: ${title}${timeoutText}`);
+}
+
 export default function (pi: ExtensionAPI) {
+  pi.events.on("notify:attention", (data) => {
+    // Always send the terminal bell.
+    process.stdout.write("\x07");
+
+    const request = getAttentionRequest(data);
+    void notifyIfAway(pi, buildAttentionTitle(pi, request), buildAttentionBody(request));
+  });
+
   pi.on("agent_end", async (event, ctx) => {
     // Always send the terminal bell.
     process.stdout.write("\x07");
 
-    const tmuxFocus = isTmuxPane()
-      ? await getCurrentTmuxFocusState(pi)
-      : { windowFocused: false, sessionAttached: false };
-    const terminalFocused = await isTerminalFocused(pi);
-
-    if (isTmuxPane()) {
-      // Skip macOS notification when this tmux window is focused in an attached session
-      // and the terminal app is focused (or app focus cannot be determined). Pane focus
-      // does not matter: another active pane in the same window should still suppress it.
-      if (tmuxFocus.windowFocused && tmuxFocus.sessionAttached && terminalFocused !== false) return;
-    } else if (terminalFocused !== false) {
-      return;
-    }
-
     const lastAssistant = [...event.messages].reverse().find(isAssistantMessage);
     const responseText = lastAssistant ? getAssistantText(lastAssistant) : undefined;
-    await sendMacosNotification(pi, buildNotificationTitle(pi, ctx), buildNotificationBody(responseText));
+    await notifyIfAway(pi, buildNotificationTitle(pi, ctx), buildNotificationBody(responseText));
   });
 }
