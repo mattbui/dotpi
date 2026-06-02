@@ -56,9 +56,9 @@ const DEFAULT_CONFIG: AutoReviewConfig = {
   userApprovalTimeoutMs: 60_000,
   reviewer: {
     modelProvider: "openai-codex",
-    modelId: "codex-auto-review",
+    modelId: "gpt-5.3-codex-spark",
     reasoningEffort: "low",
-    // Codex Guardian does not set an explicit max output token cap.
+    // Leave unset unless we want a local reviewer output cap.
     // maxTokens: 512,
   },
   sandbox: DEFAULT_SANDBOX_CONFIG,
