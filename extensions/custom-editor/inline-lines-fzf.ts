@@ -100,6 +100,16 @@ function setEditorTextAndCursor(editor: CustomEditor, lines: string[], cursorLin
   }
 }
 
+function markdownLink(label: string, target: string): string {
+  return `[${label.replaceAll("]", "\\]")}](${target})`;
+}
+
+function pathLabel(path: string, suffix = ""): string {
+  const trimmed = path.replace(/\/+$/, "");
+  const basename = trimmed.split("/").pop() || trimmed || path;
+  return `${basename}${suffix}`;
+}
+
 function parseLineCandidate(raw: string): InlineLineCandidate | null {
   const match = raw.match(/^(.*?):(\d+):(\d+):(.*)$/);
   if (!match) return null;
@@ -110,6 +120,7 @@ function parseLineCandidate(raw: string): InlineLineCandidate | null {
   const text = match[4] ?? "";
   if (!file || !line || !column) return null;
 
+  const target = `${file}:${line}`;
   return {
     raw,
     displayText: raw,
@@ -117,7 +128,7 @@ function parseLineCandidate(raw: string): InlineLineCandidate | null {
     line,
     column,
     text,
-    insertText: `${file}:${line}`,
+    insertText: markdownLink(pathLabel(file, `:${line}`), target),
   };
 }
 

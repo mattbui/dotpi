@@ -53,6 +53,15 @@ function normalizeCandidatePath(path: string): string | null {
   return normalized;
 }
 
+function markdownLink(label: string, target: string): string {
+  return `[${label.replaceAll("]", "\\]")}](${target})`;
+}
+
+function pathLabel(path: string): string {
+  const trimmed = path.replace(/\/+$/, "");
+  return trimmed.split("/").pop() || trimmed || path;
+}
+
 export function createAtAutocompleteSuppressingProvider(current: AutocompleteProvider): AutocompleteProvider {
   return {
     async getSuggestions(lines, cursorLine, cursorCol, options) {
@@ -279,9 +288,10 @@ export class InlineFileFzfController {
       // Keep the best-effort directory guess from the command output.
     }
 
+    const target = isDirectory ? `${path}/` : path;
     return {
-      path: isDirectory ? `${path}/` : path,
-      insertText: isDirectory ? `${path}/` : path,
+      path: target,
+      insertText: markdownLink(pathLabel(path), target),
       isDirectory,
     };
   }
