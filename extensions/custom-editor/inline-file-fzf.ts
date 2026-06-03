@@ -338,7 +338,7 @@ export class InlineFileFzfController {
     const candidate = match?.candidate;
     if (!candidate) return;
 
-    const insertText = `${candidate.insertText} `;
+    const insertText = candidate.insertText;
     const lines = [...editor.getLines()];
     const currentLine = lines[this.state.line] ?? "";
     lines[this.state.line] = currentLine.slice(0, this.state.startCol) + insertText + currentLine.slice(this.state.endCol);
