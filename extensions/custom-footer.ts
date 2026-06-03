@@ -23,10 +23,10 @@ function formatTokens(count: number): string {
 }
 
 function formatPermissionMode(status: string | undefined, theme: { fg: (color: string, text: string) => string }): string {
-  const cleanStatus = status ? sanitizeStatusText(status) : "";
-  if (cleanStatus === "auto-review:sandbox") return theme.fg("thinkingMedium", cleanStatus);
+  const cleanStatus = status ? sanitizeStatusText(status) : "full-access";
+  if (cleanStatus === "auto-sandbox") return theme.fg("thinkingMedium", cleanStatus);
   if (cleanStatus === "auto-review") return theme.fg("thinkingHigh", cleanStatus);
-  return theme.fg("bashMode", "full access");
+  return theme.fg("bashMode", "full-access");
 }
 
 export default function (pi: ExtensionAPI) {

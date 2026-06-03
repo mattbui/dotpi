@@ -77,7 +77,7 @@ export default function (pi: ExtensionAPI) {
       ctx.ui.setStatus(STATUS_KEY, undefined);
       return;
     }
-    ctx.ui.setStatus(STATUS_KEY, sandboxReady ? "auto-review:sandbox" : "auto-review");
+    ctx.ui.setStatus(STATUS_KEY, sandboxReady ? "auto-sandbox" : "auto-review");
   }
 
   function setSandboxOff(note?: string): void {
@@ -240,39 +240,36 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerCommand("auto-review", {
-    description: "Control auto review mode: /auto-review [status|on|off|sandbox on|sandbox off]",
+    description: "Control auto review mode: /auto-review [status|off|no-sandbox|sandbox]",
     getArgumentCompletions: (prefix: string) => {
-      const items = ["status", "on", "off", "sandbox on", "sandbox off"].map((value) => ({ value, label: value }));
+      const items = [
+        { value: "status", label: "status", description: "Show reviewer, sandbox, and active mode" },
+        { value: "off", label: "off", description: "Full access; run tools directly without checks" },
+        { value: "no-sandbox", label: "no-sandbox", description: "Run tools directly, but gate risky actions with policy/model review" },
+        { value: "sandbox", label: "sandbox", description: "Gate risky actions, then run bash inside a filesystem sandbox" },
+      ];
       const filtered = items.filter((item) => item.value.startsWith(prefix.trim()));
       return filtered.length > 0 ? filtered : null;
     },
     handler: async (args, ctx) => {
       const arg = args.trim().toLowerCase();
-      if (arg === "on") {
-        config = { ...config, enabled: true };
-        if (config.sandbox.enabled) await tryEnableSandbox();
-        updateStatus(ctx);
-        ctx.ui.notify("Auto review enabled", "info");
-        return;
-      }
-
-      if (arg === "sandbox on") {
-        config = { ...config, enabled: true, sandbox: { ...config.sandbox, enabled: true } };
-        await tryEnableSandbox();
-        updateStatus(ctx);
-        ctx.ui.notify(sandboxReady ? "Auto review and sandbox enabled" : `Auto review enabled; sandbox off${sandboxStatusNote ? ` (${sandboxStatusNote})` : ""}`, sandboxReady ? "info" : "warning");
-        return;
-      }
-
-      if (arg === "sandbox off") {
-        config = { ...config, sandbox: { ...config.sandbox, enabled: false } };
+      if (arg === "no-sandbox") {
+        config = { ...config, enabled: true, sandbox: { ...config.sandbox, enabled: false } };
         if (sandboxReady) {
           await resetSandbox().catch(() => {});
         }
         sandboxReady = false;
         sandboxStatusNote = undefined;
         updateStatus(ctx);
-        ctx.ui.notify("Auto review sandbox disabled", "info");
+        ctx.ui.notify("Auto review enabled without sandbox", "info");
+        return;
+      }
+
+      if (arg === "sandbox") {
+        config = { ...config, enabled: true, sandbox: { ...config.sandbox, enabled: true } };
+        await tryEnableSandbox();
+        updateStatus(ctx);
+        ctx.ui.notify(sandboxReady ? "Sandboxed auto review enabled" : `Auto review enabled; sandbox off${sandboxStatusNote ? ` (${sandboxStatusNote})` : ""}`, sandboxReady ? "info" : "warning");
         return;
       }
 
@@ -289,12 +286,13 @@ export default function (pi: ExtensionAPI) {
       }
 
       if (arg && arg !== "status") {
-        ctx.ui.notify("Usage: /auto-review [status|on|off|sandbox on|sandbox off]", "error");
+        ctx.ui.notify("Usage: /auto-review [status|off|no-sandbox|sandbox]", "error");
         return;
       }
 
+      const mode = !config.enabled ? "full-access" : sandboxReady ? "auto-sandbox" : "auto-review";
       const lines = [
-        `Auto review: ${config.enabled ? "enabled" : "disabled"}`,
+        `Mode: ${mode}`,
         `Reviewer: ${config.reviewer.modelProvider}/${config.reviewer.modelId}:${config.reviewer.reasoningEffort}`,
         `Sandbox: ${sandboxReady ? "on" : `off${sandboxStatusNote ? ` (${sandboxStatusNote})` : ""}`}`,
       ];
