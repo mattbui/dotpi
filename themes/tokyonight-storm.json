@@ -8,6 +8,7 @@
     "bg_highlight": "#292e42",
     "bg_highlight_lighter": "#30364d",
     "bg_visual": "#2e3c64",
+    "bg_magenta_visual": "#3a2e5a",
     "fg": "#c0caf5",
     "fg_dark": "#a9b1d6",
     "fg_gutter": "#3b4261",
@@ -55,7 +56,7 @@
     "thinkingText": "comment",
 
     "selectedBg": "bg_visual",
-    "userMessageBg": "bg_highlight_lighter",
+    "userMessageBg": "fg_gutter",
     "userMessageText": "",
     "customMessageBg": "bg_dark",
     "customMessageText": "",
