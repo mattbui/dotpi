@@ -19,13 +19,13 @@ const COMMIT_PROMPT = `Help me commit the current git changes.
 Flag behavior:
 - staged: use only staged changes
 - split: make multiple focused commits; do NOT mix unrelated changes into a single commit
-- push: push after committing without a separate push confirmation
+- push: push after committing; run git push separately
 
 Inspect git status/diffs and recent commits. Show detected changes, plan, and proposed message(s) before committing.
 
 Commit style: "type(scope): imperative lowercase subject". For large changes, include a concise multiline body with bullets to break down the changes. Types: "feat", "fix", "chore", "docs", "refactor", "test". Avoid generic scopes unless the repo uses them. Use "deps" for dependency updates and "repo" only for repo-wide changes.
 
-If push is absent, ask before committing. Even with push, stop and ask before committing or pushing if conflicts exist, unsafe/sensitive files are involved, the target branch/remote is unclear, or any operation would be destructive. Never force-push or do risky/destructive actions without explicit confirmation. Stop and ask if anything is unclear.
+If push is absent, ask before committing. Even with push, run git push separately so it's easier to review; stop and ask before committing or pushing if conflicts exist, unsafe/sensitive files are involved, the target branch/remote is unclear, or any operation would be destructive. Never force-push or do risky/destructive actions without explicit confirmation. Stop and ask if anything is unclear.
 
 Inputs:
 - Flags: $FLAGS
