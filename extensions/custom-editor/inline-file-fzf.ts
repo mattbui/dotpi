@@ -289,9 +289,10 @@ export class InlineFileFzfController {
     }
 
     const target = isDirectory ? `${path}/` : path;
+    const label = isDirectory ? `${pathLabel(path)}/` : pathLabel(path);
     return {
       path: target,
-      insertText: markdownLink(pathLabel(path), target),
+      insertText: markdownLink(label, target),
       isDirectory,
     };
   }

@@ -38,7 +38,7 @@ Behavior:
 - Searches files and directories.
 - Respects `.gitignore` by default when using `fd`.
 - Inserts selected paths without the leading `@`.
-- Inserts directories with a trailing `/`.
+- Inserts directories with a trailing `/` in both the link label and target.
 - Highlights fuzzy matched characters.
 - Esc closes the picker while leaving the typed `@query` intact.
 
