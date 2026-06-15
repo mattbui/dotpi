@@ -1,9 +1,9 @@
 /**
  * Commit workflow command.
  *
- * `/commit` creates a marker in Pi's conversation tree, sends a focused commit prompt with
- * parsed flags, and keeps a footer/widget reminder active until the context is
- * cleared. `/commit clear` can optionally summarize the commit attempt before
+ * `/commit` creates a marker in Pi's conversation tree, sends a focused commit prompt
+ * whose instructions are tailored to parsed flags, and keeps a footer/widget reminder
+ * active until the context is cleared. `/commit clear` can optionally summarize the commit attempt before
  * navigating back to the pre-commit conversation point.
  */
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -14,22 +14,21 @@ const MARKER_LABEL = "commit-start";
 const WIDGET_ID = "commit-mode";
 const VALID_FLAGS = new Set(["staged", "split", "push"]);
 
-const COMMIT_PROMPT = `Help me commit the current git changes.
+const COMMIT_PROMPT = `Prepare git commit(s) for $SCOPE.
+$DIFF_INSTRUCTION
 
-Flag behavior:
-- staged: use only staged changes
-- split: make multiple focused commits; do NOT mix unrelated changes into a single commit
-- push: push after committing; run git push separately
+Show detected changes, plan, and proposed commit message(s) before committing.
+Commit style:
+- Format: \`type(scope): imperative lowercase subject\`
+- Types: \`feat\`, \`fix\`, \`chore\`, \`docs\`, \`refactor\`, \`test\`; use \`deps\` for dependency updates
+- Use \`repo\` only for repo-wide changes
+- Avoid generic scopes unless the repo uses them
+- For large changes, include a concise multiline body with bullets
 
-Inspect git status/diffs and recent commits. Show detected changes, plan, and proposed message(s) before committing.
+$SPLIT_INSTRUCTION
+$ACTION_INSTRUCTION
 
-Commit style: "type(scope): imperative lowercase subject". For large changes, include a concise multiline body with bullets to break down the changes. Types: "feat", "fix", "chore", "docs", "refactor", "test". Avoid generic scopes unless the repo uses them. Use "deps" for dependency updates and "repo" only for repo-wide changes.
-
-If push is absent, ask before committing. Even with push, run git push separately so it's easier to review; stop and ask before committing or pushing if conflicts exist, unsafe/sensitive files are involved, the target branch/remote is unclear, or any operation would be destructive. Never force-push or do risky/destructive actions without explicit confirmation. Stop and ask if anything is unclear.
-
-Inputs:
-- Flags: $FLAGS
-- Extra instruction: $EXTRA_PROMPT`;
+Stop and ask before committing or pushing if conflicts exist, unsafe/sensitive files are involved, the target branch/remote is unclear, or any operation would be destructive. Never force-push or do risky/destructive actions without explicit confirmation. Stop and ask if anything is unclear.$EXTRA_INSTRUCTION`;
 
 const SUMMARY_INSTRUCTIONS = `Summarize this commit context concisely.
 
@@ -224,14 +223,25 @@ function parseCommitArgs(args: string): ParsedCommitArgs {
   };
 }
 
-function buildCommitPrompt(args: string, parsed: Extract<ParsedCommitArgs, { ok: true }>): string {
-  const uniqueFlags = [...new Set(parsed.flags)];
-  const flagsText = uniqueFlags.length > 0 ? uniqueFlags.join(", ") : "none";
-  const extraPrompt = parsed.extraPrompt || "none";
+function buildCommitPrompt(parsed: Extract<ParsedCommitArgs, { ok: true }>): string {
+  const flagSet = new Set(parsed.flags);
+  const scope = flagSet.has("staged") ? "the staged changes only" : "the working tree changes";
+  const diffInstruction = flagSet.has("staged")
+    ? "Inspect only staged changes for commit content. You may inspect recent commits only to match repository style and scope conventions. Do not include unstaged or untracked changes unless explicitly asked."
+    : "Inspect git status, staged changes, unstaged changes, untracked files, and recent commits.";
+  const splitInstruction = flagSet.has("split")
+    ? "Make multiple focused commits if changes are unrelated. Do not mix unrelated changes into a single commit."
+    : "Prefer a single focused commit unless the changes clearly require separation.";
+  const actionInstruction = flagSet.has("push")
+    ? "Then proceed to stage as needed, create the commit(s) without re-confirmation, and run git push separately."
+    : "Then stop and ask for confirmation before running git add, creating any commit, or pushing.";
+  const extraInstruction = parsed.extraPrompt ? `\n\nAdditional user instruction:\n${parsed.extraPrompt}` : "";
 
-  return COMMIT_PROMPT.replace("$ARGUMENTS", args.trim())
-    .replace("$FLAGS", flagsText)
-    .replace("$EXTRA_PROMPT", extraPrompt);
+  return COMMIT_PROMPT.replace("$SCOPE", scope)
+    .replace("$DIFF_INSTRUCTION", diffInstruction)
+    .replace("$SPLIT_INSTRUCTION", splitInstruction)
+    .replace("$ACTION_INSTRUCTION", actionInstruction)
+    .replace("$EXTRA_INSTRUCTION", extraInstruction);
 }
 
 function notify(ctx: ExtensionContext, message: string, level: "info" | "warning" | "error" = "info"): void {
@@ -378,7 +388,7 @@ export default function (pi: ExtensionAPI) {
 
       if (!marker) return;
 
-      pi.sendUserMessage(buildCommitPrompt(args, parsed));
+      pi.sendUserMessage(buildCommitPrompt(parsed));
     },
   });
 }
