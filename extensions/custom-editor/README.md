@@ -14,6 +14,39 @@ Custom Pi editor implementation
   - Enter inserts a newline for normal text.
   - Alt+Enter submits the prompt.
 - Prevents Tab from triggering autocomplete when the cursor token is empty.
+- Customizes large paste marker rendering with compact previews.
+
+## Large paste previews
+
+Pi collapses large pastes into markers such as:
+
+```text
+[paste #1 +123 lines]
+[paste #2 74028 chars]
+```
+
+This editor keeps those underlying markers intact, so submitted prompts still expand to the full pasted content, but renders extra context in the editor.
+
+Line-based paste markers render as a small block preview using the first line and the last non-empty trailing line:
+
+```text
+[paste #1 +123 lines]
+  first pasted line
+  ...
+  last meaningful pasted line
+[/paste #1]
+```
+
+Character-based paste markers render inline with a short first-chunk preview:
+
+```text
+[paste #2 74028 chars `first pasted chars...`]
+```
+
+After new large paste markers are inserted, the editor also adds a real separator so the cursor lands in a natural place:
+
+- line paste markers get a newline after the marker
+- character paste markers get a space after the marker
 
 ## Inline `@` file/directory picker
 

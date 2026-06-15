@@ -33,6 +33,11 @@ function padToVisibleWidth(text: string, width: number): string {
   return text + " ".repeat(Math.max(0, width - visibleWidth(text)));
 }
 
+const PASTE_MARKER_REGEX = /\[paste #(\d+)( (\+\d+ lines|\d+ chars))?\]/g;
+const PASTE_PREVIEW_INDENT = "  ";
+const PASTE_PREVIEW_CHAR_CHUNK_LENGTH = 20;
+const PASTE_PREVIEW_LINE_CHUNK_LENGTH = 80;
+
 function removeLeadingVisibleSpace(text: string): string {
   let index = 0;
   let prefix = "";
@@ -159,7 +164,7 @@ class CustomizedEditor extends CustomEditor {
       withoutTopBorder.splice(bottomBorderIndex, 1);
     }
 
-    const editorLines = ["", ...withoutTopBorder, ""];
+    const editorLines = ["", ...this.expandPasteMarkerPreviews(withoutTopBorder), ""];
     const markerColor = this.focused && this.terminalFocused ? this.activePromptMarkerColor : this.inactivePromptMarkerColor;
     const marker = this.editorBg(markerColor("▎"));
     const contentWidth = Math.max(0, width - 1);
@@ -171,6 +176,84 @@ class CustomizedEditor extends CustomEditor {
         "",
       ),
     );
+  }
+
+  private expandPasteMarkerPreviews(lines: string[]): string[] {
+    const pastes = (this as any).pastes as Map<number, string> | undefined;
+    if (!pastes?.size) return lines;
+
+    const expanded: string[] = [];
+    for (const line of lines) {
+      const seenPasteIds = new Set<number>();
+      const plainLine = stripAnsi(line);
+      const markers = [...plainLine.matchAll(PASTE_MARKER_REGEX)];
+      let renderedLine = line;
+
+      for (const match of markers) {
+        const pasteId = Number(match[1]);
+        if (seenPasteIds.has(pasteId)) continue;
+
+        const markerKind = match[3] ?? "";
+        if (!markerKind.includes("chars")) continue;
+
+        const pastedText = pastes.get(pasteId);
+        if (!pastedText) continue;
+
+        seenPasteIds.add(pasteId);
+        renderedLine = this.appendCharPastePreview(renderedLine, match[0], pastedText);
+      }
+
+      expanded.push(renderedLine);
+
+      for (const match of markers) {
+        const pasteId = Number(match[1]);
+        if (seenPasteIds.has(pasteId)) continue;
+
+        const markerKind = match[3] ?? "";
+        if (!markerKind.includes("lines")) continue;
+
+        const pastedText = pastes.get(pasteId);
+        if (!pastedText) continue;
+
+        seenPasteIds.add(pasteId);
+        expanded.push(...this.getPastePreviewLines(pasteId, markerKind, pastedText));
+      }
+    }
+
+    return expanded;
+  }
+
+  private getPastePreviewLines(pasteId: number, markerKind: string, pastedText: string): string[] {
+    if (markerKind.includes("lines")) {
+      const pastedLines = pastedText.split("\n");
+      const lastMeaningfulLine = [...pastedLines].reverse().find((line) => line.length > 0) ?? "";
+      const firstLine = this.formatLinePastePreviewLine(pastedLines[0] ?? "", "start");
+      const lastLine = this.formatLinePastePreviewLine(lastMeaningfulLine, "end");
+      const previewLines = firstLine === lastLine ? [firstLine] : [firstLine, "...", lastLine];
+
+      return [...previewLines.map((line) => PASTE_PREVIEW_INDENT + line), `[/paste #${pasteId}]`];
+    }
+
+    return [];
+  }
+
+  private appendCharPastePreview(line: string, marker: string, pastedText: string): string {
+    const preview = this.formatCharPastePreview(pastedText).replace(/`/g, "'");
+    const expandedMarker = marker.replace(/\]$/, ` \`${preview}\`]`);
+    return line.replace(marker, expandedMarker);
+  }
+
+  private formatCharPastePreview(pastedText: string): string {
+    const oneLinePreview = pastedText.replace(/\s+/g, " ").trim();
+    if (oneLinePreview.length <= PASTE_PREVIEW_CHAR_CHUNK_LENGTH) return oneLinePreview;
+    return `${oneLinePreview.slice(0, PASTE_PREVIEW_CHAR_CHUNK_LENGTH)}...`;
+  }
+
+  private formatLinePastePreviewLine(line: string, side: "start" | "end"): string {
+    if (line.length <= PASTE_PREVIEW_LINE_CHUNK_LENGTH) return line;
+    return side === "start"
+      ? line.slice(0, PASTE_PREVIEW_LINE_CHUNK_LENGTH) + "..."
+      : "..." + line.slice(-PASTE_PREVIEW_LINE_CHUNK_LENGTH);
   }
 
   handleInput(data: string): void {
@@ -245,8 +328,26 @@ class CustomizedEditor extends CustomEditor {
       return;
     }
 
+    const textBeforeInput = this.getText();
     super.handleInput(data);
+    this.ensureSeparatorAfterNewPasteMarker(textBeforeInput);
     this.updateInlineSearches();
+  }
+
+  private ensureSeparatorAfterNewPasteMarker(textBeforeInput: string): void {
+    const { line, col } = this.getCursor();
+    const currentLine = this.getLines()[line] ?? "";
+    const textBeforeCursor = currentLine.slice(0, col);
+    const textAfterCursor = currentLine.slice(col);
+
+    const markerMatch = textBeforeCursor.match(/\[paste #(\d+) (\+\d+ lines|\d+ chars)\]$/);
+    if (!markerMatch) return;
+    if (textBeforeInput.includes(`[paste #${markerMatch[1]} `)) return;
+
+    const separator = markerMatch[2].includes("lines") ? "\n" : " ";
+    if (separator === " " && /^\s/.test(textAfterCursor)) return;
+
+    this.insertTextAtCursor(separator);
   }
 
   private updateInlineSearches(): void {
