@@ -234,7 +234,7 @@ function buildCommitPrompt(parsed: Extract<ParsedCommitArgs, { ok: true }>): str
     : "Prefer a single focused commit unless the changes clearly require separation.";
   const actionInstruction = flagSet.has("push")
     ? "Then proceed to stage as needed, create the commit(s) without re-confirmation, and run git push separately."
-    : "Then stop and ask for confirmation before running git add, creating any commit, or pushing.";
+    : "Then stop and ask for confirmation before running git add, creating any commit, or pushing. After confirmation, always run git push separately";
   const extraInstruction = parsed.extraPrompt ? `\n\nAdditional user instruction:\n${parsed.extraPrompt}` : "";
 
   return COMMIT_PROMPT.replace("$SCOPE", scope)
