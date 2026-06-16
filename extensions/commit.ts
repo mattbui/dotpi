@@ -28,6 +28,7 @@ Commit style:
 $SPLIT_INSTRUCTION
 $ACTION_INSTRUCTION
 
+Always run \`git push\` separately from other commands, avoid running it with other commands.
 Stop and ask before committing or pushing if conflicts exist, unsafe/sensitive files are involved, the target branch/remote is unclear, or any operation would be destructive. Never force-push or do risky/destructive actions without explicit confirmation. Stop and ask if anything is unclear.$EXTRA_INSTRUCTION`;
 
 const SUMMARY_INSTRUCTIONS = `Summarize this commit context concisely.
@@ -233,8 +234,8 @@ function buildCommitPrompt(parsed: Extract<ParsedCommitArgs, { ok: true }>): str
     ? "Make multiple focused commits if changes are unrelated. Do not mix unrelated changes into a single commit."
     : "Prefer a single focused commit unless the changes clearly require separation.";
   const actionInstruction = flagSet.has("push")
-    ? "Then proceed to stage as needed, create the commit(s) without re-confirmation, and run git push separately."
-    : "Then stop and ask for confirmation before running git add, creating any commit, or pushing. After confirmation, always run git push separately";
+    ? "Then proceed to stage as needed, create the commit(s) without re-confirmation, and push."
+    : "Then stop and ask for confirmation before running git add, creating any commit, or push.";
   const extraInstruction = parsed.extraPrompt ? `\n\nAdditional user instruction:\n${parsed.extraPrompt}` : "";
 
   return COMMIT_PROMPT.replace("$SCOPE", scope)
