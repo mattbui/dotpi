@@ -46,6 +46,15 @@ Then include only the relevant points below:
 
 Omit tool details, file-by-file diffs, and implementation commentary.`;
 
+const PUSH_PROMPT = "Plan looks good, proceed to stage changes if needed, commit and push without any re-confirmation";
+
+function buildPushPrompt(additionalInstruction: string): string {
+  const trimmed = additionalInstruction.trim();
+  if (!trimmed) return PUSH_PROMPT;
+
+  return `${PUSH_PROMPT}\n\nAdditional instruction before committing and pushing:\n${trimmed}`;
+}
+
 type CommitMarker = {
   entryId: string;
   createdAt?: number;
@@ -368,6 +377,16 @@ export default function (pi: ExtensionAPI) {
       if (trimmed.startsWith("clear ")) {
         notify(ctx, "Usage: /commit clear", "error");
         return;
+      }
+
+      if (trimmed === "push" || trimmed.startsWith("push ")) {
+        await ctx.waitForIdle();
+        refresh(ctx);
+
+        if (marker) {
+          pi.sendUserMessage(buildPushPrompt(trimmed.slice("push".length)));
+          return;
+        }
       }
 
       const parsed = parseCommitArgs(args);
