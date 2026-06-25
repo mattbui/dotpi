@@ -8,16 +8,18 @@
  */
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
+import { Type } from "typebox";
 
 const CUSTOM_TYPE = "commit-mode";
 const MARKER_LABEL = "commit-start";
 const WIDGET_ID = "commit-mode";
+const DECISION_TOOL_NAME = "commit_confirm";
 const VALID_FLAGS = new Set(["staged", "split", "push"]);
 
 const COMMIT_PROMPT = `Prepare git commit(s) for $SCOPE.
 $DIFF_INSTRUCTION
-
-Show detected changes, plan, and proposed commit message(s) before committing.
+$PRESENTATION_INSTRUCTION
+$SPLIT_INSTRUCTION
 Commit style:
 - Format: \`type(scope): imperative lowercase subject\`
 - Types: \`feat\`, \`fix\`, \`chore\`, \`docs\`, \`refactor\`, \`test\`; use \`deps\` for dependency updates
@@ -25,11 +27,10 @@ Commit style:
 - Avoid generic scopes unless the repo uses them
 - For large changes, include a concise multiline body with bullets
 
-$SPLIT_INSTRUCTION
-$ACTION_INSTRUCTION
+$DECISION_INSTRUCTION
 
-Always run \`git push\` separately from other commands, avoid running it with other commands.
-Stop and ask before committing or pushing if conflicts exist, unsafe/sensitive files are involved, the target branch/remote is unclear, or any operation would be destructive. Never force-push or do risky/destructive actions without explicit confirmation. Stop and ask if anything is unclear.$EXTRA_INSTRUCTION`;
+Always run \`git push\` separately from other commands.
+Only stop and ask before committing or pushing if conflicts exist, unsafe/sensitive files are involved, the target branch/remote is unclear, or any operation would be destructive. Never force-push or do risky/destructive actions without explicit confirmation.$EXTRA_INSTRUCTION`;
 
 const SUMMARY_INSTRUCTIONS = `Summarize this commit context concisely.
 
@@ -46,14 +47,9 @@ Then include only the relevant points below:
 
 Omit tool details, file-by-file diffs, and implementation commentary.`;
 
-const PUSH_PROMPT = "Plan looks good, proceed to stage changes if needed, commit and push without any re-confirmation";
-
-function buildPushPrompt(additionalInstruction: string): string {
-  const trimmed = additionalInstruction.trim();
-  if (!trimmed) return PUSH_PROMPT;
-
-  return `${PUSH_PROMPT}\n\nAdditional instruction before committing and pushing:\n${trimmed}`;
-}
+const PROCEED_OPTION = "Proceed to add, commit, and push without any more confirmation";
+const PROCEED_WITH_FEEDBACK_OPTION = "Apply feedback, then add, commit, and push without any more confirmation";
+const REVISE_OPTION = "Provide feedback and revise the plan first";
 
 type CommitMarker = {
   entryId: string;
@@ -239,23 +235,44 @@ function buildCommitPrompt(parsed: Extract<ParsedCommitArgs, { ok: true }>): str
   const diffInstruction = flagSet.has("staged")
     ? "Inspect only staged changes for commit content. You may inspect recent commits only to match repository style and scope conventions. Do not include unstaged or untracked changes unless explicitly asked."
     : "Inspect git status, staged changes, unstaged changes, untracked files, and recent commits.";
+  const presentationInstruction = flagSet.has("push")
+    ? "Show detected changes, staging plan, and proposed commit message(s)."
+    : "Show detected changes, staging plan, and proposed commit message(s). Then call commit_confirm.";
   const splitInstruction = flagSet.has("split")
     ? "Make multiple focused commits if changes are unrelated. Do not mix unrelated changes into a single commit."
-    : "Prefer a single focused commit unless the changes clearly require separation.";
-  const actionInstruction = flagSet.has("push")
-    ? "Then proceed to stage as needed, create the commit(s) without re-confirmation, and push."
-    : "Then stop and ask for confirmation before running git add, creating any commit, or push.";
+    : "Make a single focused commit unless the changes clearly require separation.";
+  const decisionInstruction = flagSet.has("push")
+    ? "Then proceed to stage as needed, commit, and push without calling commit_confirm."
+    : `Follow the tool result:
+- proceed: stage as needed, commit, and push without more confirmation.
+- proceed_with_feedback: apply the feedback, then stage as needed, commit, and push without more confirmation.
+- revise: revise the plan/message and call commit_confirm again before committing.`;
   const extraInstruction = parsed.extraPrompt ? `\n\nAdditional user instruction:\n${parsed.extraPrompt}` : "";
 
   return COMMIT_PROMPT.replace("$SCOPE", scope)
     .replace("$DIFF_INSTRUCTION", diffInstruction)
+    .replace("$PRESENTATION_INSTRUCTION", presentationInstruction)
     .replace("$SPLIT_INSTRUCTION", splitInstruction)
-    .replace("$ACTION_INSTRUCTION", actionInstruction)
+    .replace("$DECISION_INSTRUCTION", decisionInstruction)
     .replace("$EXTRA_INSTRUCTION", extraInstruction);
 }
 
 function notify(ctx: ExtensionContext, message: string, level: "info" | "warning" | "error" = "info"): void {
   if (ctx.hasUI) ctx.ui.notify(message, level);
+}
+
+function setCommitDecisionToolActive(pi: ExtensionAPI, active: boolean): void {
+  const activeTools = pi.getActiveTools();
+  const hasTool = activeTools.includes(DECISION_TOOL_NAME);
+
+  if (active && !hasTool) {
+    pi.setActiveTools([...activeTools, DECISION_TOOL_NAME]);
+    return;
+  }
+
+  if (!active && hasTool) {
+    pi.setActiveTools(activeTools.filter((tool) => tool !== DECISION_TOOL_NAME));
+  }
 }
 
 async function createMarker(pi: ExtensionAPI, ctx: ExtensionCommandContext): Promise<CommitMarker | undefined> {
@@ -298,6 +315,7 @@ export default function (pi: ExtensionAPI) {
     marker = deriveMarkerFromCurrentBranch(ctx);
     if (marker && options.backfillLabels) ensureMarkerLabels(pi, ctx, marker);
     syncCommitWidget(ctx, marker);
+    setCommitDecisionToolActive(pi, marker !== undefined);
   }
 
   pi.on("session_start", (_event, ctx) => {
@@ -315,10 +333,84 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_shutdown", (_event, ctx) => {
     marker = undefined;
     syncCommitWidget(ctx, undefined);
+    setCommitDecisionToolActive(pi, false);
+  });
+
+  pi.registerTool({
+    name: DECISION_TOOL_NAME,
+    label: "Commit Plan Decision",
+    description: "Ask the user whether to proceed with the proposed commit plan, proceed with small feedback, or revise first.",
+    promptSnippet: "Ask the user to confirm the commit plan before staging, committing, and pushing in commit mode.",
+    promptGuidelines: [
+      "Use commit_confirm in commit mode after showing the detected changes, plan, and proposed commit message(s), unless the user used /commit push.",
+    ],
+    parameters: Type.Object({}),
+    async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
+      if (!marker) {
+        return {
+          isError: true,
+          content: [{ type: "text", text: "commit_confirm is only available in commit mode." }],
+          details: { action: "unavailable" },
+        };
+      }
+
+      if (!ctx.hasUI) {
+        return {
+          isError: true,
+          content: [{ type: "text", text: "commit_confirm requires interactive UI." }],
+          details: { action: "unavailable" },
+        };
+      }
+
+      const choice = await ctx.ui.select("Commit plan", [PROCEED_OPTION, PROCEED_WITH_FEEDBACK_OPTION, REVISE_OPTION]);
+
+      if (choice === undefined) {
+        return {
+          isError: true,
+          content: [{ type: "text", text: "User cancelled the commit plan decision. Do not stage, commit, or push." }],
+          details: { action: "cancelled" },
+        };
+      }
+
+      if (choice === PROCEED_OPTION) {
+        return {
+          content: [{ type: "text", text: "User approved. Proceed to add, commit, and push without further confirmation." }],
+          details: { action: "proceed" },
+        };
+      }
+
+      if (choice === PROCEED_WITH_FEEDBACK_OPTION) {
+        const feedback = (await ctx.ui.editor("Feedback to apply before pushing:", ""))?.trim() ?? "";
+        return {
+          content: [
+            {
+              type: "text",
+              text: feedback
+                ? `User approved with feedback. Apply this feedback, then add, commit, and push without further confirmation:\n${feedback}`
+                : "User approved with no feedback entered. Proceed to add, commit, and push without further confirmation.",
+            },
+          ],
+          details: { action: "proceed_with_feedback", feedback },
+        };
+      }
+
+      const feedback = (await ctx.ui.editor("Feedback for revised commit plan:", ""))?.trim() ?? "";
+      return {
+        content: [
+          {
+            type: "text",
+            text: feedback
+              ? `User requested revisions before committing. Revise the plan/message using this feedback, then call commit_confirm again:\n${feedback}`
+              : "User requested revisions before committing. Revise the plan/message, then call commit_confirm again.",
+          },
+        ],
+        details: { action: "revise", feedback },
+      };
+    },
   });
 
   pi.registerCommand("commit", {
-    description: "Stage, commit, and optionally push changes ([staged] [split] [push] [extra instruction...] | clear)",
+    description: "Stage, commit, and push changes ([staged] [split] [push] [extra instruction...] | clear)",
     handler: async (args, ctx) => {
       if (!ctx.hasUI) {
         throw new Error("/commit requires interactive mode");
@@ -379,16 +471,6 @@ export default function (pi: ExtensionAPI) {
         return;
       }
 
-      if (trimmed === "push" || trimmed.startsWith("push ")) {
-        await ctx.waitForIdle();
-        refresh(ctx);
-
-        if (marker) {
-          pi.sendUserMessage(buildPushPrompt(trimmed.slice("push".length)));
-          return;
-        }
-      }
-
       const parsed = parseCommitArgs(args);
       if (!parsed.ok) {
         notify(ctx, parsed.error, "error");
@@ -401,6 +483,7 @@ export default function (pi: ExtensionAPI) {
       if (!marker) {
         marker = await createMarker(pi, ctx);
         syncCommitWidget(ctx, marker);
+        setCommitDecisionToolActive(pi, marker !== undefined);
       } else {
         ensureMarkerLabels(pi, ctx, marker);
         notify(ctx, "commit marker already active; using existing marker", "info");
