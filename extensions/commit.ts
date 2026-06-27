@@ -7,7 +7,7 @@
  * navigating back to the pre-commit conversation point.
  */
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { Text } from "@earendil-works/pi-tui";
+import { type Component, type Focusable, Input, Text, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 
 const CUSTOM_TYPE = "commit-mode";
@@ -19,12 +19,13 @@ const VALID_FLAGS = new Set(["staged", "split", "push"]);
 const COMMIT_PROMPT = `Prepare git commit(s) for $SCOPE.
 $DIFF_INSTRUCTION
 $PRESENTATION_INSTRUCTION
-$SPLIT_INSTRUCTION
+
 Commit style:
 - Format: \`type(scope): imperative lowercase subject\`
 - Types: \`feat\`, \`fix\`, \`chore\`, \`docs\`, \`refactor\`, \`test\`; use \`deps\` for dependency updates
 - Use \`repo\` only for repo-wide changes
 - Avoid generic scopes unless the repo uses them
+$SPLIT_INSTRUCTION
 - For large changes, include a concise multiline body with bullets
 
 $DECISION_INSTRUCTION
@@ -47,9 +48,7 @@ Then include only the relevant points below:
 
 Omit tool details, file-by-file diffs, and implementation commentary.`;
 
-const PROCEED_OPTION = "Proceed to add, commit, and push without any more confirmation";
-const PROCEED_WITH_FEEDBACK_OPTION = "Apply feedback, then add, commit, and push without any more confirmation";
-const REVISE_OPTION = "Provide feedback and revise the plan first";
+const REVISE_RESULT_TEXT = "User wants to discuss/revise before committing. Stop here and wait for the user's input.";
 
 type CommitMarker = {
   entryId: string;
@@ -233,20 +232,21 @@ function buildCommitPrompt(parsed: Extract<ParsedCommitArgs, { ok: true }>): str
   const flagSet = new Set(parsed.flags);
   const scope = flagSet.has("staged") ? "the staged changes only" : "the working tree changes";
   const diffInstruction = flagSet.has("staged")
-    ? "Inspect only staged changes for commit content. You may inspect recent commits only to match repository style and scope conventions. Do not include unstaged or untracked changes unless explicitly asked."
+    ? "Inspect only staged changes. Check recent commits only for style/scope. Do not include unstaged or untracked changes unless explicitly asked."
     : "Inspect git status, staged changes, unstaged changes, untracked files, and recent commits.";
   const presentationInstruction = flagSet.has("push")
     ? "Show detected changes, staging plan, and proposed commit message(s)."
-    : "Show detected changes, staging plan, and proposed commit message(s). Then call commit_confirm.";
+    : "Show detected changes, staging plan, and proposed commit message(s), then call `commit_confirm`.";
   const splitInstruction = flagSet.has("split")
-    ? "Make multiple focused commits if changes are unrelated. Do not mix unrelated changes into a single commit."
-    : "Make a single focused commit unless the changes clearly require separation.";
+    ? "- Group changes by intent and scope, committing unrelated groups separately"
+    : "- Prefer a single focused commit unless the changes clearly need separation";
   const decisionInstruction = flagSet.has("push")
-    ? "Then proceed to stage as needed, commit, and push without calling commit_confirm."
-    : `Follow the tool result:
-- proceed: stage as needed, commit, and push without more confirmation.
-- proceed_with_feedback: apply the feedback, then stage as needed, commit, and push without more confirmation.
-- revise: revise the plan/message and call commit_confirm again before committing.`;
+    ? flagSet.has("staged")
+      ? "Then commit the staged changes and push without calling `commit_confirm`."
+      : "Then stage as needed, commit, and push without calling `commit_confirm`."
+    : `After \`commit_confirm\`:
+- proceed/proceed_with_feedback: stage, commit, and push without more confirmation
+- revise: stop and wait for user input`;
   const extraInstruction = parsed.extraPrompt ? `\n\nAdditional user instruction:\n${parsed.extraPrompt}` : "";
 
   return COMMIT_PROMPT.replace("$SCOPE", scope)
@@ -298,14 +298,101 @@ async function chooseClearMode(ctx: ExtensionCommandContext): Promise<"clear" | 
   if (!ctx.hasUI) return "clear";
 
   const choice = await ctx.ui.select("Clean up commit context", [
-    "Clear without summary",
-    "Summarize then clear",
+    "Clear",
+    "Summarize",
     "Cancel",
   ]);
 
-  if (choice === "Summarize then clear") return "summarize";
+  if (choice === "Summarize") return "summarize";
   if (choice === "Cancel" || choice === undefined) return "cancel";
   return "clear";
+}
+
+type CommitDecision =
+  | { action: "proceed" }
+  | { action: "proceed_with_feedback"; feedback: string }
+  | { action: "revise" };
+
+class CommitDecisionPrompt implements Component, Focusable {
+  private readonly input = new Input();
+  private _focused = false;
+
+  onDone?: (decision: CommitDecision) => void;
+
+  get focused(): boolean {
+    return this._focused;
+  }
+
+  set focused(value: boolean) {
+    this._focused = value;
+    this.input.focused = value;
+  }
+
+  constructor(
+    private readonly title: string,
+    private readonly label: string,
+    private readonly hint: string,
+    private readonly border: (text: string) => string,
+  ) {
+    this.input.onSubmit = (value) => {
+      const feedback = value.trim();
+      this.onDone?.(feedback ? { action: "proceed_with_feedback", feedback } : { action: "proceed" });
+    };
+    this.input.onEscape = () => this.onDone?.({ action: "revise" });
+  }
+
+  handleInput(data: string): void {
+    if (matchesKey(data, "escape")) {
+      this.onDone?.({ action: "revise" });
+      return;
+    }
+
+    this.input.handleInput(data);
+  }
+
+  invalidate(): void {
+    this.input.invalidate();
+  }
+
+  render(width: number): string[] {
+    const borderWidth = Math.max(1, width);
+    const border = this.border("─".repeat(borderWidth));
+    return [
+      border,
+      truncateToWidth(this.title, width),
+      truncateToWidth(this.label, width),
+      ...this.input.render(width),
+      truncateToWidth(this.hint, width),
+      border,
+    ];
+  }
+}
+
+async function chooseCommitDecision(ctx: ExtensionContext): Promise<CommitDecision> {
+  return ctx.ui.custom<CommitDecision>((tui, theme, _keybindings, done) => {
+    const prompt = new CommitDecisionPrompt(
+      theme.fg("accent", theme.bold("Commit and push?")),
+      theme.fg("muted", "Optional feedback:"),
+      theme.fg("dim", "Add feedback to refine • Leave blank to proceed • Esc to cancel"),
+      (text: string) => theme.fg("accent", text),
+    );
+    prompt.onDone = done;
+
+    return {
+      get focused() {
+        return prompt.focused;
+      },
+      set focused(value: boolean) {
+        prompt.focused = value;
+      },
+      render: (width) => prompt.render(width),
+      invalidate: () => prompt.invalidate(),
+      handleInput: (data) => {
+        prompt.handleInput(data);
+        tui.requestRender();
+      },
+    };
+  });
 }
 
 export default function (pi: ExtensionAPI) {
@@ -362,49 +449,30 @@ export default function (pi: ExtensionAPI) {
         };
       }
 
-      const choice = await ctx.ui.select("Commit plan", [PROCEED_OPTION, PROCEED_WITH_FEEDBACK_OPTION, REVISE_OPTION]);
+      const decision = await chooseCommitDecision(ctx);
 
-      if (choice === undefined) {
+      if (decision.action === "proceed") {
         return {
-          isError: true,
-          content: [{ type: "text", text: "User cancelled the commit plan decision. Do not stage, commit, or push." }],
-          details: { action: "cancelled" },
-        };
-      }
-
-      if (choice === PROCEED_OPTION) {
-        return {
-          content: [{ type: "text", text: "User approved. Proceed to add, commit, and push without further confirmation." }],
+          content: [{ type: "text", text: "User approved. Proceed to add, commit, and push, no more confirmation." }],
           details: { action: "proceed" },
         };
       }
 
-      if (choice === PROCEED_WITH_FEEDBACK_OPTION) {
-        const feedback = (await ctx.ui.editor("Feedback to apply before pushing:", ""))?.trim() ?? "";
+      if (decision.action === "proceed_with_feedback") {
         return {
           content: [
             {
               type: "text",
-              text: feedback
-                ? `User approved with feedback. Apply this feedback, then add, commit, and push without further confirmation:\n${feedback}`
-                : "User approved with no feedback entered. Proceed to add, commit, and push without further confirmation.",
+              text: `User approved with feedback. Apply this feedback, then add, commit, and push, no more confirmation:\n${decision.feedback}`,
             },
           ],
-          details: { action: "proceed_with_feedback", feedback },
+          details: { action: "proceed_with_feedback", feedback: decision.feedback },
         };
       }
 
-      const feedback = (await ctx.ui.editor("Feedback for revised commit plan:", ""))?.trim() ?? "";
       return {
-        content: [
-          {
-            type: "text",
-            text: feedback
-              ? `User requested revisions before committing. Revise the plan/message using this feedback, then call commit_confirm again:\n${feedback}`
-              : "User requested revisions before committing. Revise the plan/message, then call commit_confirm again.",
-          },
-        ],
-        details: { action: "revise", feedback },
+        content: [{ type: "text", text: REVISE_RESULT_TEXT }],
+        details: { action: "revise", feedback: "" },
       };
     },
   });
