@@ -11,12 +11,12 @@
  * The macOS notification title is `pi: <session name>` when a session name exists, or `pi`
  * otherwise. The notification body is a truncated preview of the last assistant response.
  *
- * `PI_NOTIFY_TERMINAL_APP` can be set when the terminal app is not Alacritty.
+ * `TERM_APP_NAME` can be set when the terminal app is not Alacritty.
  */
 import type { AssistantMessage, TextContent } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
-const TERMINAL_APP_NAME = process.env.PI_NOTIFY_TERMINAL_APP || "Alacritty";
+const TERMINAL_APP_NAME = process.env.TERM_APP_NAME || "Alacritty";
 const NOTIFICATION_TITLE_PREFIX = "pi";
 const MAX_NOTIFICATION_BODY_LENGTH = 220;
 
