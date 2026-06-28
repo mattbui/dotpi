@@ -347,6 +347,12 @@ class CommitDecisionPrompt implements Component, Focusable {
       return;
     }
 
+    if (matchesKey(data, "enter")) {
+      const feedback = this.input.getValue().trim();
+      this.onDone?.(feedback ? { action: "proceed_with_feedback", feedback } : { action: "proceed" });
+      return;
+    }
+
     this.input.handleInput(data);
   }
 
@@ -373,7 +379,7 @@ async function chooseCommitDecision(ctx: ExtensionContext): Promise<CommitDecisi
     const prompt = new CommitDecisionPrompt(
       theme.fg("accent", theme.bold("Commit and push?")),
       theme.fg("muted", "Optional feedback:"),
-      theme.fg("dim", "Add feedback to refine • Leave blank to proceed • Esc to cancel"),
+      theme.fg("dim", "Enter to proceed • Add feedback to refine • Esc to cancel"),
       (text: string) => theme.fg("accent", text),
     );
     prompt.onDone = done;
