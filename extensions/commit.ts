@@ -236,7 +236,7 @@ function buildCommitPrompt(parsed: Extract<ParsedCommitArgs, { ok: true }>): str
     : "Inspect git status, staged changes, unstaged changes, untracked files, and recent commits.";
   const presentationInstruction = flagSet.has("push")
     ? "Show detected changes, staging plan, and proposed commit message(s)."
-    : "Show detected changes, staging plan, and proposed commit message(s), then call `commit_confirm`.";
+    : "Show detected changes, staging plan, and proposed commit message(s), AFTER that call `commit_confirm`.";
   const splitInstruction = flagSet.has("split")
     ? "- Group changes by intent and scope, committing unrelated groups separately"
     : "- Prefer a single focused commit unless the changes clearly need separation";
@@ -432,10 +432,10 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: DECISION_TOOL_NAME,
     label: "Commit Plan Decision",
-    description: "Ask the user whether to proceed with the proposed commit plan, proceed with small feedback, or revise first.",
-    promptSnippet: "Ask the user to confirm the commit plan before staging, committing, and pushing in commit mode.",
+    description: "Ask the user to approve, approve with feedback, or revise the commit plan.",
+    promptSnippet: "Confirm the commit plan before staging, committing, and pushing.",
     promptGuidelines: [
-      "Use commit_confirm in commit mode after showing the detected changes, plan, and proposed commit message(s), unless the user used /commit push.",
+      "ONLY call commit_confirm in commit mode AFTER showing detected changes, the staging/commit plan, and proposed commit message(s); do not call it for /commit push.",
     ],
     parameters: Type.Object({}),
     async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
