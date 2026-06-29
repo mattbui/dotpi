@@ -14,7 +14,7 @@ import { extendedMatch, Fzf, type FzfResultItem } from "fzf";
 
 const INLINE_FILE_FZF_WIDGET_KEY = "inline-file-fzf";
 const INLINE_FILE_FZF_FD_COMMAND =
-  "fd --hidden --follow --type f --type d --exclude .git --exclude .DS_Store --exclude .src --exclude .venv --exclude '.undodir*'";
+  "fd --hidden --follow --type f --type d";
 const INLINE_FILE_FZF_FIND_COMMAND =
   "find . \\( -path './.git' -o -path './.src' -o -path './.venv' -o -path './.undodir*' -o -name '.DS_Store' \\) -prune -o \\( -type f -o -type d \\) -print";
 const INLINE_FILE_FZF_DEFAULT_COMMAND =

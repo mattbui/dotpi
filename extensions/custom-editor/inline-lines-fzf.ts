@@ -12,7 +12,7 @@ import { extendedMatch, Fzf, type FzfResultItem } from "fzf";
 
 const INLINE_LINES_FZF_WIDGET_KEY = "inline-lines-fzf";
 const INLINE_LINES_FZF_DEFAULT_COMMAND =
-  "rg --column --line-number --no-heading --color=never --hidden --follow --glob '!.git' --glob '!.src' --glob '!.venv' --glob '!.DS_Store' --glob '!.undodir*' '^'";
+  "rg --column --line-number --no-heading --color=never --hidden --follow '^'";
 const INLINE_LINES_FZF_MAX_MATCHES = 200;
 const INLINE_LINES_FZF_MAX_VISIBLE = 10;
 
