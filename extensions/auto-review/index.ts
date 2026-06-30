@@ -130,14 +130,14 @@ export default function (pi: ExtensionAPI) {
     if (decision.kind === "deny") return { allow: false, reason: decision.reason };
 
     if (decision.kind === "user_approval") {
-      const ok = await askUser(ctx, "Approve protected tool call?", formatActionForUser(decision.action, decision.reason));
+      const ok = await askUser(ctx, "Allow tool?", formatActionForUser(decision.action, decision.reason));
       return ok ? { allow: true } : { allow: false, reason: "Blocked by user" };
     }
 
     const review = await withWorkingMessage(ctx, autoReviewMessage(decision.action), () => runAutoReview(decision.action, ctx, config.reviewer, ctx.signal));
     if (reviewAllowed(review)) return { allow: true };
     if (reviewEscalatesToUser(review)) {
-      const ok = await askUser(ctx, "Approve protected tool call?", formatActionForUser(decision.action, `Auto reviewer requested user approval: ${review.rationale}`));
+      const ok = await askUser(ctx, "Allow tool?", formatActionForUser(decision.action, review.rationale));
       return ok ? { allow: true } : { allow: false, reason: "Blocked by user" };
     }
     return { allow: false, reason: `Blocked by auto review: ${review.rationale}` };
@@ -152,11 +152,11 @@ export default function (pi: ExtensionAPI) {
     }
 
     if (config.sandboxFallback === "user") {
-      const ok = await askUser(ctx, "Retry without sandbox?", formatActionForUser(action, "Sandbox denied this command"));
+      const ok = await askUser(ctx, "Retry without sandbox?", formatActionForUser(action, "Sandbox denied command"));
       return ok ? { allow: true } : { allow: false, reason: "Retry without sandbox blocked by user" };
     }
 
-    const review = await withWorkingMessage(ctx, "Auto reviewing retry without sandbox...", () => runAutoReview(action, ctx, config.reviewer, ctx.signal));
+    const review = await withWorkingMessage(ctx, "Reviewing retry..", () => runAutoReview(action, ctx, config.reviewer, ctx.signal));
     if (reviewAllowed(review)) return { allow: true };
 
     if (reviewEscalatesToUser(review)) {
@@ -195,7 +195,7 @@ export default function (pi: ExtensionAPI) {
         const retryResolution = await reviewSandboxFallback(retryAction, ctx);
         if (!retryResolution.allow) throw new Error(retryResolution.reason);
 
-        if (ctx.hasUI) ctx.ui.notify("Sandbox blocked command; approved retry without sandbox", "info");
+        if (ctx.hasUI) ctx.ui.notify("Sandbox blocked; retry approved", "info");
         return createBashToolDefinition(ctx.cwd).execute(toolCallId, params, signal, onUpdate, ctx);
       }
     },
@@ -224,7 +224,7 @@ export default function (pi: ExtensionAPI) {
     await tryEnableSandbox();
     updateStatus(ctx);
     if (ctx.hasUI) {
-      ctx.ui.notify(sandboxReady ? "Auto review sandbox initialized" : `Auto review enabled; sandbox off${sandboxStatusNote ? ` (${sandboxStatusNote})` : ""}`, sandboxReady ? "info" : "warning");
+      ctx.ui.notify(sandboxReady ? "Auto-sandbox on" : `Auto-review on; sandbox off${sandboxStatusNote ? ` (${sandboxStatusNote})` : ""}`, sandboxReady ? "info" : "warning");
     }
   });
 
@@ -302,17 +302,13 @@ export default function (pi: ExtensionAPI) {
 }
 
 function formatSandboxFallbackUserPrompt(action: ReviewAction, rationale: string): string {
-  return [
-    formatActionForUser(action, `Auto reviewer requested user approval for retry without sandbox: ${rationale}`),
-    "",
-    "This will run without the filesystem sandbox.",
-  ].join("\n");
+  return formatActionForUser(action, rationale);
 }
 
 function autoReviewMessage(action: ReviewAction): string {
-  if (action.kind === "initial_bash") return "Auto reviewing bash command...";
-  if (action.kind === "path_write") return "Auto reviewing file write...";
-  if (action.kind === "path_read") return "Auto reviewing file read...";
-  if (action.kind === "path_search") return "Auto reviewing file search...";
-  return "Auto reviewing tool call...";
+  if (action.kind === "initial_bash") return "Reviewing bash..";
+  if (action.kind === "path_write") return "Reviewing write..";
+  if (action.kind === "path_read") return "Reviewing read..";
+  if (action.kind === "path_search") return "Reviewing search..";
+  return "Reviewing tool..";
 }

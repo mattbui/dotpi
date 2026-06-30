@@ -122,7 +122,7 @@ export function classifyBashCommand(command: string, cwd: string): PolicyDecisio
     cwd,
     command,
     operation: "execute",
-    reason: "Shell command needs policy review",
+    reason: "Review shell command",
   };
 
   if (SAFE_READ_COMMANDS.some((pattern) => pattern.test(normalizedCommand))) {
@@ -130,10 +130,10 @@ export function classifyBashCommand(command: string, cwd: string): PolicyDecisio
   }
 
   if (REVIEW_COMMANDS.some((pattern) => pattern.test(normalizedCommand))) {
-    return { kind: "auto_review", action, reason: "Shell command can change dependencies, network state, git state, or filesystem state" };
+    return { kind: "auto_review", action, reason: "May change deps, network, git, or files" };
   }
 
-  return { kind: "auto_review", action, reason: "Shell command is not in the low-risk allowlist" };
+  return { kind: "auto_review", action, reason: "Not in low-risk allowlist" };
 }
 
 export function classifyFileOperationTool(event: FileOperationToolEvent, cwd: string): PolicyDecision | undefined {
@@ -153,7 +153,7 @@ export function classifyFileOperationTool(event: FileOperationToolEvent, cwd: st
     cwd,
     path: absolutePath,
     operation,
-    reason: "File operation tool needs policy review",
+    reason: "Review file operation",
   };
 
   if (sensitivity === "secret_material") {
@@ -164,7 +164,7 @@ export function classifyFileOperationTool(event: FileOperationToolEvent, cwd: st
     return {
       kind: "user_approval",
       action,
-      reason: `${event.toolName} targets a sensitive user path: ${displayPath(absolutePath)}`,
+      reason: "Sensitive user path",
     };
   }
 
@@ -172,7 +172,7 @@ export function classifyFileOperationTool(event: FileOperationToolEvent, cwd: st
     return {
       kind: "auto_review",
       action,
-      reason: `${event.toolName} targets a path outside the workspace: ${displayPath(absolutePath)}`,
+      reason: "Outside workspace",
     };
   }
 
@@ -180,7 +180,7 @@ export function classifyFileOperationTool(event: FileOperationToolEvent, cwd: st
     return {
       kind: "auto_review",
       action,
-      reason: `${event.toolName} targets a sensitive workspace path: ${displayPath(absolutePath)}`,
+      reason: "Sensitive workspace path",
     };
   }
 
@@ -195,7 +195,7 @@ export function buildSandboxFallbackAction(command: string, cwd: string, sandbox
     cwd,
     command,
     operation: "execute",
-    reason: "Sandbox denied the command; review retry without sandbox",
+    reason: "Review retry without sandbox",
     sandboxDenial,
   };
 }
@@ -209,14 +209,15 @@ export function reviewEscalatesToUser(decision: ReviewDecision): boolean {
 }
 
 export function formatActionForUser(action: ReviewAction, reason: string): string {
-  const lines = [
-    `Tool: ${action.toolName}`,
-    `Reason: ${reason}`,
-    `cwd: ${action.cwd}`,
-  ];
-  if (action.path) lines.push(`Path: ${displayPath(action.path)}`);
-  if (action.command) lines.push(`Command: ${action.command}`);
-  if (action.sandboxDenial) lines.push("", `Sandbox denial: ${action.sandboxDenial}`);
+  const subject = action.path
+    ? displayPath(action.path)
+    : action.command
+      ? oneLine(action.command)
+      : action.operation;
+  const lines = [`${action.toolName}: ${truncateUi(subject, 180)}`, `Reason: ${truncateUi(stripReasonPrefix(reason), 140)}`];
+
+  if (action.path && action.command) lines.push(`Command: ${truncateUi(oneLine(action.command), 180)}`);
+  if (action.sandboxDenial) lines.push(`Sandbox: ${truncateUi(oneLine(action.sandboxDenial), 220)}`);
   return lines.join("\n");
 }
 
@@ -266,4 +267,18 @@ function toPosixPath(pathValue: string): string {
 
 function displayPath(pathValue: string): string {
   return toPosixPath(pathValue);
+}
+
+function oneLine(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+function stripReasonPrefix(reason: string): string {
+  return reason.replace(/^Reason:\s*/i, "").trim();
+}
+
+function truncateUi(text: string, maxLength: number): string {
+  const normalized = oneLine(text);
+  if (normalized.length <= maxLength) return normalized;
+  return `${normalized.slice(0, Math.max(0, maxLength - 3)).trimEnd()}...`;
 }
