@@ -11,16 +11,16 @@ import { matchesKey, truncateToWidth, visibleWidth, type AutocompleteProvider } 
 import {
   addCursorMarkerBeforeSoftwareCursor,
   BEAM_CURSOR_SHAPE,
+  createTerminalFocusTracker,
   type CursorCleanup,
   type CursorRuntime,
   enableBeamCursorSupport,
-  FOCUS_IN,
-  FOCUS_OUT,
   getCursorRuntime,
   hasCursorMarker,
   HIDE_CURSOR,
   SHOW_CURSOR,
   stripSoftwareCursorWhenHardwareCursorIsUsed,
+  type TerminalFocusTracker,
 } from "./cursor.ts";
 import { createAtAutocompleteSuppressingProvider, InlineFileFzfController } from "./inline-file-fzf.ts";
 import { InlineLinesFzfController } from "./inline-lines-fzf.ts";
@@ -120,9 +120,7 @@ class CustomizedEditor extends CustomEditor {
   private inactivePromptMarkerColor: (text: string) => string;
   private editorBg: (text: string) => string;
   private cursorRuntime: CursorRuntime | null;
-  private terminalFocused = true;
   private lastCursorState: "beam" | "hidden" | null = null;
-  private requestRender: (() => void) | undefined;
 
   constructor(
     tui: any,
@@ -134,13 +132,13 @@ class CustomizedEditor extends CustomEditor {
     private isSlashCommand: (commandName: string) => boolean,
     private inlineFileSearch: InlineFileFzfController,
     private inlineLinesSearch: InlineLinesFzfController,
+    private terminalFocus: TerminalFocusTracker | null,
   ) {
     super(tui, theme, keybindings);
     this.activePromptMarkerColor = activePromptMarkerColor;
     this.inactivePromptMarkerColor = inactivePromptMarkerColor;
     this.editorBg = editorBg;
     this.cursorRuntime = getCursorRuntime(tui);
-    this.requestRender = typeof tui?.requestRender === "function" ? () => tui.requestRender() : undefined;
   }
 
   override setAutocompleteProvider(provider: AutocompleteProvider): void {
@@ -165,7 +163,8 @@ class CustomizedEditor extends CustomEditor {
     }
 
     const editorLines = ["", ...this.expandPasteMarkerPreviews(withoutTopBorder), ""];
-    const markerColor = this.focused && this.terminalFocused ? this.activePromptMarkerColor : this.inactivePromptMarkerColor;
+    const terminalFocused = this.isTerminalFocused();
+    const markerColor = this.focused && terminalFocused ? this.activePromptMarkerColor : this.inactivePromptMarkerColor;
     const marker = this.editorBg(markerColor("▎"));
     const contentWidth = Math.max(0, width - 1);
 
@@ -257,15 +256,6 @@ class CustomizedEditor extends CustomEditor {
   }
 
   handleInput(data: string): void {
-    if (data === FOCUS_IN) {
-      this.setTerminalFocused(true);
-      return;
-    }
-    if (data === FOCUS_OUT) {
-      this.setTerminalFocused(false);
-      return;
-    }
-
     if (this.inlineLinesSearch.handleInput(this, data)) {
       return;
     }
@@ -367,14 +357,8 @@ class CustomizedEditor extends CustomEditor {
     this.onSubmit?.(text);
   }
 
-  private setTerminalFocused(focused: boolean): void {
-    if (this.terminalFocused === focused) return;
-
-    this.terminalFocused = focused;
-    this.cursorRuntime?.setShowHardwareCursor(focused);
-    this.writeCursorState(focused ? "beam" : "hidden");
-    this.invalidate();
-    this.requestRender?.();
+  private isTerminalFocused(): boolean {
+    return this.terminalFocus?.isFocused() ?? true;
   }
 
   private syncHardwareCursorForRender(lines: string[]): void {
@@ -387,9 +371,10 @@ class CustomizedEditor extends CustomEditor {
     addCursorMarkerBeforeSoftwareCursor(lines);
     if (!hasCursorMarker(lines)) return;
 
+    const terminalFocused = this.isTerminalFocused();
     stripSoftwareCursorWhenHardwareCursorIsUsed(lines);
-    this.cursorRuntime.setShowHardwareCursor(this.terminalFocused);
-    this.writeCursorState(this.terminalFocused ? "beam" : "hidden");
+    this.cursorRuntime.setShowHardwareCursor(terminalFocused);
+    this.writeCursorState(terminalFocused ? "beam" : "hidden");
   }
 
   private writeCursorState(state: "beam" | "hidden"): void {
@@ -406,12 +391,16 @@ class CustomizedEditor extends CustomEditor {
 
 export default function (pi: ExtensionAPI) {
   let cursorCleanup: CursorCleanup | null = null;
+  let terminalFocusTracker: TerminalFocusTracker | null = null;
   let inlineFileSearch: InlineFileFzfController | null = null;
   let inlineLinesSearch: InlineLinesFzfController | null = null;
 
   pi.on("session_start", (_event, ctx) => {
     ctx.ui.setEditorComponent((tui, theme, keybindings) => {
+      terminalFocusTracker?.dispose();
+      cursorCleanup?.();
       cursorCleanup = enableBeamCursorSupport(tui);
+      terminalFocusTracker = createTerminalFocusTracker(tui);
       inlineFileSearch = new InlineFileFzfController(pi, ctx.cwd, ctx.ui, () => tui.requestRender());
       inlineLinesSearch = new InlineLinesFzfController(pi, ctx.ui, () => tui.requestRender());
       return new CustomizedEditor(
@@ -425,6 +414,7 @@ export default function (pi: ExtensionAPI) {
           BUILTIN_SLASH_COMMANDS.has(commandName) || pi.getCommands().some((command) => command.name === commandName),
         inlineFileSearch,
         inlineLinesSearch,
+        terminalFocusTracker,
       );
     });
   });
@@ -433,10 +423,12 @@ export default function (pi: ExtensionAPI) {
     try {
       inlineLinesSearch?.dispose();
       inlineFileSearch?.dispose();
+      terminalFocusTracker?.dispose();
       cursorCleanup?.();
     } finally {
       inlineLinesSearch = null;
       inlineFileSearch = null;
+      terminalFocusTracker = null;
       cursorCleanup = null;
     }
   });

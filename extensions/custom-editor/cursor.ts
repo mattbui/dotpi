@@ -27,6 +27,11 @@ export type CursorRuntime = {
 
 export type CursorCleanup = () => void;
 
+export type TerminalFocusTracker = {
+  isFocused: () => boolean;
+  dispose: () => void;
+};
+
 export function getCursorRuntime(tui: any): CursorRuntime | null {
   const terminal = tui?.terminal;
   if (typeof terminal?.write !== "function" || typeof tui?.setShowHardwareCursor !== "function") return null;
@@ -64,6 +69,51 @@ export function enableBeamCursorSupport(tui: any): CursorCleanup | null {
     }
     // Write this last so the shell always gets a visible, reset cursor after Pi exits.
     runtime.write(SHOW_CURSOR + RESET_CURSOR_SHAPE + DISABLE_FOCUS_EVENTS);
+  };
+}
+
+export function createTerminalFocusTracker(tui: any): TerminalFocusTracker | null {
+  const runtime = getCursorRuntime(tui);
+  if (!runtime || typeof tui?.addInputListener !== "function") return null;
+
+  let focused = true;
+
+  const requestRender = typeof tui?.requestRender === "function" ? () => tui.requestRender() : undefined;
+  const setFocused = (nextFocused: boolean): void => {
+    if (focused === nextFocused) return;
+
+    focused = nextFocused;
+    runtime.setShowHardwareCursor(nextFocused);
+    runtime.write(nextFocused ? SHOW_CURSOR + BEAM_CURSOR_SHAPE : HIDE_CURSOR);
+    requestRender?.();
+  };
+
+  const unsubscribe = tui.addInputListener((data: string) => {
+    let remaining = data;
+    let matched = false;
+
+    while (true) {
+      const focusInIndex = remaining.indexOf(FOCUS_IN);
+      const focusOutIndex = remaining.indexOf(FOCUS_OUT);
+      if (focusInIndex === -1 && focusOutIndex === -1) break;
+
+      const useFocusIn = focusInIndex !== -1 && (focusOutIndex === -1 || focusInIndex < focusOutIndex);
+      const index = useFocusIn ? focusInIndex : focusOutIndex;
+      const sequence = useFocusIn ? FOCUS_IN : FOCUS_OUT;
+
+      matched = true;
+      setFocused(useFocusIn);
+      remaining = remaining.slice(0, index) + remaining.slice(index + sequence.length);
+    }
+
+    if (!matched) return undefined;
+    if (remaining.length === 0) return { consume: true };
+    return { data: remaining };
+  });
+
+  return {
+    isFocused: () => focused,
+    dispose: () => unsubscribe(),
   };
 }
 
