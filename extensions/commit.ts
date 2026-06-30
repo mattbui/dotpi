@@ -49,6 +49,7 @@ Then include only the relevant points below:
 Omit tool details, file-by-file diffs, and implementation commentary.`;
 
 const REVISE_RESULT_TEXT = "User wants to discuss/revise before committing. Stop here and wait for the user's input.";
+const COMMIT_DECISION_TITLE = "Commit and push?";
 
 type CommitMarker = {
   entryId: string;
@@ -374,10 +375,18 @@ class CommitDecisionPrompt implements Component, Focusable {
   }
 }
 
+function requestCommitDecisionAttention(pi: ExtensionAPI, ctx: ExtensionContext): void {
+  pi.events.emit("notify:attention", {
+    kind: "confirm",
+    title: COMMIT_DECISION_TITLE,
+    sessionName: pi.getSessionName() || ctx.sessionManager.getSessionName(),
+  });
+}
+
 async function chooseCommitDecision(ctx: ExtensionContext): Promise<CommitDecision> {
   return ctx.ui.custom<CommitDecision>((tui, theme, _keybindings, done) => {
     const prompt = new CommitDecisionPrompt(
-      theme.fg("accent", theme.bold("Commit and push?")),
+      theme.fg("accent", theme.bold(COMMIT_DECISION_TITLE)),
       theme.fg("muted", "Optional feedback:"),
       theme.fg("dim", "Enter to proceed • Add feedback to refine • Esc to cancel"),
       (text: string) => theme.fg("accent", text),
@@ -455,6 +464,7 @@ export default function (pi: ExtensionAPI) {
         };
       }
 
+      requestCommitDecisionAttention(pi, ctx);
       const decision = await chooseCommitDecision(ctx);
 
       if (decision.action === "proceed") {
