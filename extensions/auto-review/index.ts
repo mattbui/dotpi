@@ -56,7 +56,7 @@ const DEFAULT_CONFIG: AutoReviewConfig = {
   userApprovalTimeoutMs: 60_000,
   reviewer: {
     modelProvider: "openai-codex",
-    modelId: "gpt-5.3-codex-spark",
+    modelId: "gpt-5.5",
     reasoningEffort: "low",
     // Leave unset unless we want a local reviewer output cap.
     // maxTokens: 512,
@@ -102,7 +102,11 @@ export default function (pi: ExtensionAPI) {
     }
   }
 
-  async function askUser(ctx: ExtensionContext, title: string, body: string): Promise<boolean> {
+  async function askUser(
+    ctx: ExtensionContext,
+    title: string,
+    body: string,
+  ): Promise<boolean> {
     if (!ctx.hasUI) return false;
 
     pi.events.emit("notify:attention", {
@@ -112,10 +116,16 @@ export default function (pi: ExtensionAPI) {
       sessionName: pi.getSessionName() || ctx.sessionManager.getSessionName(),
     });
 
-    return ctx.ui.confirm(title, body, { timeout: config.userApprovalTimeoutMs });
+    return ctx.ui.confirm(title, body, {
+      timeout: config.userApprovalTimeoutMs,
+    });
   }
 
-  async function withWorkingMessage<T>(ctx: ExtensionContext, message: string, fn: () => Promise<T>): Promise<T> {
+  async function withWorkingMessage<T>(
+    ctx: ExtensionContext,
+    message: string,
+    fn: () => Promise<T>,
+  ): Promise<T> {
     if (!ctx.hasUI) return fn();
     ctx.ui.setWorkingMessage(message);
     try {
@@ -125,22 +135,41 @@ export default function (pi: ExtensionAPI) {
     }
   }
 
-  async function resolveDecision(decision: PolicyDecision, ctx: ExtensionContext): Promise<{ allow: true } | { allow: false; reason: string }> {
+  async function resolveDecision(
+    decision: PolicyDecision,
+    ctx: ExtensionContext,
+  ): Promise<{ allow: true } | { allow: false; reason: string }> {
     if (decision.kind === "allow") return { allow: true };
-    if (decision.kind === "deny") return { allow: false, reason: decision.reason };
+    if (decision.kind === "deny")
+      return { allow: false, reason: decision.reason };
 
     if (decision.kind === "user_approval") {
-      const ok = await askUser(ctx, "Allow tool?", formatActionForUser(decision.action, decision.reason));
+      const ok = await askUser(
+        ctx,
+        "Allow tool?",
+        formatActionForUser(decision.action, decision.reason),
+      );
       return ok ? { allow: true } : { allow: false, reason: "Blocked by user" };
     }
 
-    const review = await withWorkingMessage(ctx, autoReviewMessage(decision.action), () => runAutoReview(decision.action, ctx, config.reviewer, ctx.signal));
+    const review = await withWorkingMessage(
+      ctx,
+      autoReviewMessage(decision.action),
+      () => runAutoReview(decision.action, ctx, config.reviewer, ctx.signal),
+    );
     if (reviewAllowed(review)) return { allow: true };
     if (reviewEscalatesToUser(review)) {
-      const ok = await askUser(ctx, "Allow tool?", formatActionForUser(decision.action, review.rationale));
+      const ok = await askUser(
+        ctx,
+        "Allow tool?",
+        formatActionForUser(decision.action, review.rationale),
+      );
       return ok ? { allow: true } : { allow: false, reason: "Blocked by user" };
     }
-    return { allow: false, reason: `Blocked by auto review: ${review.rationale}` };
+    return {
+      allow: false,
+      reason: `Blocked by auto review: ${review.rationale}`,
+    };
   }
 
   async function reviewSandboxFallback(
@@ -152,19 +181,36 @@ export default function (pi: ExtensionAPI) {
     }
 
     if (config.sandboxFallback === "user") {
-      const ok = await askUser(ctx, "Retry without sandbox?", formatActionForUser(action, "Sandbox denied command"));
-      return ok ? { allow: true } : { allow: false, reason: "Retry without sandbox blocked by user" };
+      const ok = await askUser(
+        ctx,
+        "Retry without sandbox?",
+        formatActionForUser(action, "Sandbox denied command"),
+      );
+      return ok
+        ? { allow: true }
+        : { allow: false, reason: "Retry without sandbox blocked by user" };
     }
 
-    const review = await withWorkingMessage(ctx, "Reviewing retry..", () => runAutoReview(action, ctx, config.reviewer, ctx.signal));
+    const review = await withWorkingMessage(ctx, "Reviewing retry..", () =>
+      runAutoReview(action, ctx, config.reviewer, ctx.signal),
+    );
     if (reviewAllowed(review)) return { allow: true };
 
     if (reviewEscalatesToUser(review)) {
-      const ok = await askUser(ctx, "Retry without sandbox?", formatSandboxFallbackUserPrompt(action, review.rationale));
-      return ok ? { allow: true } : { allow: false, reason: "Retry without sandbox blocked by user" };
+      const ok = await askUser(
+        ctx,
+        "Retry without sandbox?",
+        formatSandboxFallbackUserPrompt(action, review.rationale),
+      );
+      return ok
+        ? { allow: true }
+        : { allow: false, reason: "Retry without sandbox blocked by user" };
     }
 
-    return { allow: false, reason: `Retry without sandbox blocked by auto review: ${review.rationale}` };
+    return {
+      allow: false,
+      reason: `Retry without sandbox blocked by auto review: ${review.rationale}`,
+    };
   }
 
   pi.registerTool({
@@ -178,25 +224,51 @@ export default function (pi: ExtensionAPI) {
       ctx: ExtensionContext,
     ): Promise<AgentToolResult<BashToolDetails | undefined>> {
       if (!config.enabled) {
-        return createBashToolDefinition(ctx.cwd).execute(toolCallId, params, signal, onUpdate, ctx);
+        return createBashToolDefinition(ctx.cwd).execute(
+          toolCallId,
+          params,
+          signal,
+          onUpdate,
+          ctx,
+        );
       }
 
       const initialDecision = classifyBashCommand(params.command, ctx.cwd);
       const initialResolution = await resolveDecision(initialDecision, ctx);
       if (!initialResolution.allow) throw new Error(initialResolution.reason);
 
-      const sandboxedBash = sandboxReady ? createBashToolDefinition(ctx.cwd, { operations: createSandboxedBashOps() }) : createBashToolDefinition(ctx.cwd);
+      const sandboxedBash = sandboxReady
+        ? createBashToolDefinition(ctx.cwd, {
+            operations: createSandboxedBashOps(),
+          })
+        : createBashToolDefinition(ctx.cwd);
       try {
-        return await sandboxedBash.execute(toolCallId, params, signal, onUpdate, ctx);
+        return await sandboxedBash.execute(
+          toolCallId,
+          params,
+          signal,
+          onUpdate,
+          ctx,
+        );
       } catch (error) {
         if (!sandboxReady || !isSandboxDeniedError(error)) throw error;
 
-        const retryAction = buildSandboxFallbackAction(params.command, ctx.cwd, sandboxDenialText(error));
+        const retryAction = buildSandboxFallbackAction(
+          params.command,
+          ctx.cwd,
+          sandboxDenialText(error),
+        );
         const retryResolution = await reviewSandboxFallback(retryAction, ctx);
         if (!retryResolution.allow) throw new Error(retryResolution.reason);
 
         if (ctx.hasUI) ctx.ui.notify("Sandbox blocked; retry approved", "info");
-        return createBashToolDefinition(ctx.cwd).execute(toolCallId, params, signal, onUpdate, ctx);
+        return createBashToolDefinition(ctx.cwd).execute(
+          toolCallId,
+          params,
+          signal,
+          onUpdate,
+          ctx,
+        );
       }
     },
   });
@@ -205,7 +277,13 @@ export default function (pi: ExtensionAPI) {
     if (!config.enabled) return;
     if (isToolCallEventType("bash", event)) return;
 
-    const decision = classifyFileOperationTool({ toolName: event.toolName, input: event.input as Record<string, unknown> }, ctx.cwd);
+    const decision = classifyFileOperationTool(
+      {
+        toolName: event.toolName,
+        input: event.input as Record<string, unknown>,
+      },
+      ctx.cwd,
+    );
     if (!decision) return;
 
     const resolution = await resolveDecision(decision, ctx);
@@ -224,7 +302,12 @@ export default function (pi: ExtensionAPI) {
     await tryEnableSandbox();
     updateStatus(ctx);
     if (ctx.hasUI) {
-      ctx.ui.notify(sandboxReady ? "Auto-sandbox on" : `Auto-review on; sandbox off${sandboxStatusNote ? ` (${sandboxStatusNote})` : ""}`, sandboxReady ? "info" : "warning");
+      ctx.ui.notify(
+        sandboxReady
+          ? "Auto-sandbox on"
+          : `Auto-review on; sandbox off${sandboxStatusNote ? ` (${sandboxStatusNote})` : ""}`,
+        sandboxReady ? "info" : "warning",
+      );
     }
   });
 
@@ -240,21 +323,46 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerCommand("auto-review", {
-    description: "Control auto review mode: /auto-review [status|off|no-sandbox|sandbox]",
+    description:
+      "Control auto review mode: /auto-review [status|off|no-sandbox|sandbox]",
     getArgumentCompletions: (prefix: string) => {
       const items = [
-        { value: "status", label: "status", description: "Show reviewer, sandbox, and active mode" },
-        { value: "off", label: "off", description: "Full access; run tools directly without checks" },
-        { value: "no-sandbox", label: "no-sandbox", description: "Run tools directly, but gate risky actions with policy/model review" },
-        { value: "sandbox", label: "sandbox", description: "Gate risky actions, then run bash inside a filesystem sandbox" },
+        {
+          value: "status",
+          label: "status",
+          description: "Show reviewer, sandbox, and active mode",
+        },
+        {
+          value: "off",
+          label: "off",
+          description: "Full access; run tools directly without checks",
+        },
+        {
+          value: "no-sandbox",
+          label: "no-sandbox",
+          description:
+            "Run tools directly, but gate risky actions with policy/model review",
+        },
+        {
+          value: "sandbox",
+          label: "sandbox",
+          description:
+            "Gate risky actions, then run bash inside a filesystem sandbox",
+        },
       ];
-      const filtered = items.filter((item) => item.value.startsWith(prefix.trim()));
+      const filtered = items.filter((item) =>
+        item.value.startsWith(prefix.trim()),
+      );
       return filtered.length > 0 ? filtered : null;
     },
     handler: async (args, ctx) => {
       const arg = args.trim().toLowerCase();
       if (arg === "no-sandbox") {
-        config = { ...config, enabled: true, sandbox: { ...config.sandbox, enabled: false } };
+        config = {
+          ...config,
+          enabled: true,
+          sandbox: { ...config.sandbox, enabled: false },
+        };
         if (sandboxReady) {
           await resetSandbox().catch(() => {});
         }
@@ -266,10 +374,19 @@ export default function (pi: ExtensionAPI) {
       }
 
       if (arg === "sandbox") {
-        config = { ...config, enabled: true, sandbox: { ...config.sandbox, enabled: true } };
+        config = {
+          ...config,
+          enabled: true,
+          sandbox: { ...config.sandbox, enabled: true },
+        };
         await tryEnableSandbox();
         updateStatus(ctx);
-        ctx.ui.notify(sandboxReady ? "Sandboxed auto review enabled" : `Auto review enabled; sandbox off${sandboxStatusNote ? ` (${sandboxStatusNote})` : ""}`, sandboxReady ? "info" : "warning");
+        ctx.ui.notify(
+          sandboxReady
+            ? "Sandboxed auto review enabled"
+            : `Auto review enabled; sandbox off${sandboxStatusNote ? ` (${sandboxStatusNote})` : ""}`,
+          sandboxReady ? "info" : "warning",
+        );
         return;
       }
 
@@ -286,11 +403,18 @@ export default function (pi: ExtensionAPI) {
       }
 
       if (arg && arg !== "status") {
-        ctx.ui.notify("Usage: /auto-review [status|off|no-sandbox|sandbox]", "error");
+        ctx.ui.notify(
+          "Usage: /auto-review [status|off|no-sandbox|sandbox]",
+          "error",
+        );
         return;
       }
 
-      const mode = !config.enabled ? "full-access" : sandboxReady ? "auto-sandbox" : "auto-review";
+      const mode = !config.enabled
+        ? "full-access"
+        : sandboxReady
+          ? "auto-sandbox"
+          : "auto-review";
       const lines = [
         `Mode: ${mode}`,
         `Reviewer: ${config.reviewer.modelProvider}/${config.reviewer.modelId}:${config.reviewer.reasoningEffort}`,
@@ -301,7 +425,10 @@ export default function (pi: ExtensionAPI) {
   });
 }
 
-function formatSandboxFallbackUserPrompt(action: ReviewAction, rationale: string): string {
+function formatSandboxFallbackUserPrompt(
+  action: ReviewAction,
+  rationale: string,
+): string {
   return formatActionForUser(action, rationale);
 }
 
