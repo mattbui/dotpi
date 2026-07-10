@@ -21,12 +21,13 @@ $DIFF_INSTRUCTION
 $PRESENTATION_INSTRUCTION
 
 Commit style:
-- Format: \`type(scope): imperative lowercase subject\`
+- Format: \`type(scope/subscope): imperative lowercase subject\`
 - Types: \`feat\`, \`fix\`, \`chore\`, \`docs\`, \`refactor\`, \`test\`; use \`deps\` for dependency updates
 - Use \`repo\` only for repo-wide changes
 - Avoid generic scopes unless the repo uses them
 $SPLIT_INSTRUCTION
 - For large changes, include a concise multiline body with bullets
+- \`scope\` and \`subscope\` are optional, use them to add useful context
 
 $DECISION_INSTRUCTION
 
