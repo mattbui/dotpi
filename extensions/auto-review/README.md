@@ -54,7 +54,7 @@ The sandbox only wraps `bash`. File operation tools are protected before executi
 
 ## Reviewer
 
-The reviewer uses `openai-codex/gpt-5.3-codex-spark` with low reasoning by default. It receives no tools and returns only JSON:
+The reviewer uses the current session model with low reasoning by default. It receives no tools and returns only JSON:
 
 ```text
 allow | deny | escalate_to_user

@@ -2,11 +2,11 @@
  * Model-based auto reviewer.
  *
  * The reviewer is deliberately not an agent and receives no tools. It uses a
- * single `complete()` call against a dedicated reviewer model with a compact prompt,
+ * single `complete()` call against the current session model with a compact prompt,
  * then validates strict JSON. Any missing model/auth, invalid JSON, abort, or
  * provider failure becomes a deny decision so policy falls closed.
  */
-import { complete, type Api, type Model, type UserMessage } from "@earendil-works/pi-ai";
+import { complete, type UserMessage } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { ReviewAction, ReviewDecision } from "./policy.ts";
 
@@ -30,16 +30,14 @@ Policy:
 {"outcome":"allow"|"deny"|"escalate_to_user","risk":"low"|"medium"|"high"|"critical","rationale":"<=80 chars, no prefix"}`;
 
 export type ReviewerConfig = {
-  modelProvider: string;
-  modelId: string;
   reasoningEffort: "minimal" | "low";
   maxTokens?: number;
 };
 
 export async function runAutoReview(action: ReviewAction, ctx: ExtensionContext, config: ReviewerConfig, signal?: AbortSignal): Promise<ReviewDecision> {
-  const model = resolveReviewerModel(ctx, config);
+  const model = ctx.model;
   if (!model) {
-    return deny(`No ${config.modelProvider}/${config.modelId} model is available for auto review`);
+    return deny("No current session model is available for auto review");
   }
 
   const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
@@ -74,22 +72,6 @@ export async function runAutoReview(action: ReviewAction, ctx: ExtensionContext,
   } catch (error) {
     return deny(`Auto review failed: ${error instanceof Error ? error.message : String(error)}`);
   }
-}
-
-function resolveReviewerModel(ctx: ExtensionContext, config: ReviewerConfig): Model<Api> | undefined {
-  const configured = ctx.modelRegistry.find(config.modelProvider, config.modelId);
-  if (configured) return configured;
-
-  const base = ctx.modelRegistry
-    .getAvailable()
-    .find((model) => model.provider === config.modelProvider && model.api === "openai-codex-responses");
-  if (!base) return undefined;
-
-  return {
-    ...base,
-    id: config.modelId,
-    name: config.modelId,
-  };
 }
 
 function buildReviewerPrompt(action: ReviewAction, recentSession: string): string {

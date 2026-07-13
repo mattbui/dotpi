@@ -55,8 +55,6 @@ const DEFAULT_CONFIG: AutoReviewConfig = {
   sandboxFallback: "auto-review",
   userApprovalTimeoutMs: 60_000,
   reviewer: {
-    modelProvider: "openai-codex",
-    modelId: "gpt-5.5",
     reasoningEffort: "low",
     // Leave unset unless we want a local reviewer output cap.
     // maxTokens: 512,
@@ -417,7 +415,7 @@ export default function (pi: ExtensionAPI) {
           : "auto-review";
       const lines = [
         `Mode: ${mode}`,
-        `Reviewer: ${config.reviewer.modelProvider}/${config.reviewer.modelId}:${config.reviewer.reasoningEffort}`,
+        `Reviewer: current session model:${config.reviewer.reasoningEffort}`,
         `Sandbox: ${sandboxReady ? "on" : `off${sandboxStatusNote ? ` (${sandboxStatusNote})` : ""}`}`,
       ];
       ctx.ui.notify(lines.join("\n"), "info");
