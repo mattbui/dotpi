@@ -14,10 +14,15 @@ const CUSTOM_TYPE = "commit-mode";
 const MARKER_LABEL = "commit-start";
 const WIDGET_ID = "commit-mode";
 const DECISION_TOOL_NAME = "commit_confirm";
-const VALID_FLAGS = new Set(["staged", "split", "push"]);
+const VALID_FLAGS = new Set(["split", "push"]);
 
-const COMMIT_PROMPT = `Prepare git commit(s) for $SCOPE.
-$DIFF_INSTRUCTION
+const COMMIT_PROMPT = `Plan commit(s) following these rules:
+
+- Check whether any changes are staged.
+- If staged changes exist, inspect and plan commits only for those changes. Ignore unstaged or untracked changes.
+- If no staged changes exist, inspect unstaged changes and untracked files, then plan what to stage and commit.
+- Inspect recent commits to match repository style and scope conventions.
+
 $PRESENTATION_INSTRUCTION
 
 Commit style:
@@ -232,28 +237,20 @@ function parseCommitArgs(args: string): ParsedCommitArgs {
 
 function buildCommitPrompt(parsed: Extract<ParsedCommitArgs, { ok: true }>): string {
   const flagSet = new Set(parsed.flags);
-  const scope = flagSet.has("staged") ? "the staged changes only" : "the working tree changes";
-  const diffInstruction = flagSet.has("staged")
-    ? "Inspect only staged changes. Check recent commits only for style/scope. Do not include unstaged or untracked changes unless explicitly asked."
-    : "Inspect git status, staged changes, unstaged changes, untracked files, and recent commits.";
   const presentationInstruction = flagSet.has("push")
-    ? "Show detected changes, staging plan, and proposed commit message(s)."
-    : "Show detected changes, staging plan, and proposed commit message(s), AFTER that call `commit_confirm`.";
+    ? "Show detected changes, staging/grouping plan, and proposed commit message(s)."
+    : "Show detected changes, staging/grouping plan, and proposed commit message(s), AFTER that call `commit_confirm`.";
   const splitInstruction = flagSet.has("split")
     ? "- Group changes by intent and scope, committing unrelated groups separately"
     : "- Prefer a single focused commit unless the changes clearly need separation";
   const decisionInstruction = flagSet.has("push")
-    ? flagSet.has("staged")
-      ? "Then commit the staged changes and push without calling `commit_confirm`."
-      : "Then stage as needed, commit, and push without calling `commit_confirm`."
+    ? "Stage changes if needed then commit and push without calling `commit_confirm`."
     : `After \`commit_confirm\`:
-- proceed/proceed_with_feedback: stage, commit, and push without more confirmation
+- proceed/proceed_with_feedback: Stage changes if needed then commit and push without more confirmation
 - revise: stop and wait for user input`;
   const extraInstruction = parsed.extraPrompt ? `\n\nAdditional user instruction:\n${parsed.extraPrompt}` : "";
 
-  return COMMIT_PROMPT.replace("$SCOPE", scope)
-    .replace("$DIFF_INSTRUCTION", diffInstruction)
-    .replace("$PRESENTATION_INSTRUCTION", presentationInstruction)
+  return COMMIT_PROMPT.replace("$PRESENTATION_INSTRUCTION", presentationInstruction)
     .replace("$SPLIT_INSTRUCTION", splitInstruction)
     .replace("$DECISION_INSTRUCTION", decisionInstruction)
     .replace("$EXTRA_INSTRUCTION", extraInstruction);
@@ -443,7 +440,7 @@ export default function (pi: ExtensionAPI) {
     name: DECISION_TOOL_NAME,
     label: "Commit Plan Decision",
     description: "Ask the user to approve, approve with feedback, or revise the commit plan.",
-    promptSnippet: "Confirm the commit plan before staging, committing, and pushing.",
+    promptSnippet: "Confirm the staging/grouping and commit plan before committing and pushing.",
     promptGuidelines: [
       "ONLY call commit_confirm in commit mode AFTER showing detected changes, the staging/commit plan, and proposed commit message(s); do not call it for /commit push.",
     ],
@@ -470,7 +467,7 @@ export default function (pi: ExtensionAPI) {
 
       if (decision.action === "proceed") {
         return {
-          content: [{ type: "text", text: "User approved. Proceed to add, commit, and push, no more confirmation." }],
+          content: [{ type: "text", text: "User approved. Carry out the approved plan, commit, and push, no more confirmation." }],
           details: { action: "proceed" },
         };
       }
@@ -480,7 +477,7 @@ export default function (pi: ExtensionAPI) {
           content: [
             {
               type: "text",
-              text: `User approved with feedback. Apply this feedback, then add, commit, and push, no more confirmation:\n${decision.feedback}`,
+              text: `User approved with feedback. Apply this feedback, then carry out the approved plan, commit, and push, no more confirmation:\n${decision.feedback}`,
             },
           ],
           details: { action: "proceed_with_feedback", feedback: decision.feedback },
@@ -495,7 +492,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerCommand("commit", {
-    description: "Stage, commit, and push changes ([staged] [split] [push] [extra instruction...] | clear)",
+    description: "Stage, commit, and push changes ([split] [push] [extra instruction...] | clear)",
     handler: async (args, ctx) => {
       if (!ctx.hasUI) {
         throw new Error("/commit requires interactive mode");
