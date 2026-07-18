@@ -13,7 +13,7 @@ const MAX_TITLE_LENGTH = 60;
 const MAX_TITLE_SOURCE_LENGTH = 12000;
 const TITLE_ELLIPSIS = "...";
 const TITLE_MODEL_PROVIDER = "openai-codex";
-const TITLE_MODEL_ID = "gpt-5.3-codex-spark";
+const TITLE_MODEL_ID = "gpt-5.6-luna";
 const TITLE_GENERATION_SYSTEM_PROMPT = `You generate concise session titles for coding-agent conversations.
 
 Given the user's first message, produce a short descriptive title.
@@ -157,7 +157,7 @@ export default function (pi: ExtensionAPI) {
         apiKey: auth.apiKey,
         headers: auth.headers,
         maxTokens: 64,
-        reasoningEffort: "minimal",
+        reasoningEffort: "low",
         signal,
       },
     );
